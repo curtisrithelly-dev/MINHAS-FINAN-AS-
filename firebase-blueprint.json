@@ -1,0 +1,98 @@
+{
+  "entities": {
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial transaction record",
+      "type": "object",
+      "properties": {
+        "amount": { "type": "number" },
+        "date": { "type": "string" },
+        "category": { "type": "string" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "description": { "type": "string" },
+        "bankAccountId": { "type": "string" }
+      },
+      "required": ["amount", "date", "category", "type", "description"]
+    },
+    "BankAccount": {
+      "title": "BankAccount",
+      "description": "Bank account details",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "balance": { "type": "number" },
+        "color": { "type": "string" }
+      },
+      "required": ["name", "balance"]
+    },
+    "Debt": {
+      "title": "Debt",
+      "description": "Debt or installment record",
+      "type": "object",
+      "properties": {
+        "creditor": { "type": "string" },
+        "totalAmount": { "type": "number" },
+        "remainingAmount": { "type": "number" },
+        "dueDate": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "paid", "overdue"] },
+        "category": { "type": "string" },
+        "type": { "type": "string", "enum": ["fixed", "unique", "installments"] },
+        "installmentInfo": {
+          "type": "object",
+          "properties": {
+            "current": { "type": "number" },
+            "total": { "type": "number" },
+            "groupId": { "type": "string" }
+          }
+        },
+        "recurringGroupId": { "type": "string" },
+        "isCancelled": { "type": "boolean" },
+        "payments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "amount": { "type": "number" },
+              "date": { "type": "string" },
+              "bankAccountId": { "type": "string" },
+              "bankAccountName": { "type": "string" }
+            }
+          }
+        }
+      },
+      "required": ["creditor", "totalAmount", "remainingAmount", "dueDate", "status"]
+    },
+    "CreditCard": {
+      "title": "CreditCard",
+      "description": "Credit card details",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "limit": { "type": "number" },
+        "closingDay": { "type": "number" },
+        "dueDay": { "type": "number" },
+        "color": { "type": "string" }
+      },
+      "required": ["name", "limit", "closingDay", "dueDay"]
+    }
+  },
+  "firestore": {
+    "transactions": {
+      "schema": "Transaction",
+      "description": "Collection of transactions"
+    },
+    "bankAccounts": {
+      "schema": "BankAccount",
+      "description": "Collection of bank accounts"
+    },
+    "debts": {
+      "schema": "Debt",
+      "description": "Collection of debts and installments"
+    },
+    "cards": {
+      "schema": "CreditCard",
+      "description": "Collection of credit cards"
+    }
+  }
+}

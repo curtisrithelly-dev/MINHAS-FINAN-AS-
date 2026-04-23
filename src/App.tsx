@@ -1,84 +1,37 @@
-import { useState, useEffect, useMemo } from 'react';
-import { PlusCircle, Wallet, ArrowUpCircle, ArrowDownCircle, CreditCard as CreditCardIcon, History, CheckCircle2, AlertCircle, Trash2 } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { PlusCircle, Wallet, ArrowUpCircle, ArrowDownCircle, CreditCard as CreditCardIcon, History, CheckCircle2, AlertCircle, Trash2, LogIn, LogOut, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Transaction, Debt, CreditCard, BankAccount } from './types';
+import { Transaction, Debt, CreditCard, BankAccount, DebtPayment } from './types';
+import { auth, db, handleFirestoreError } from './firebase';
+import { 
+  collection, 
+  onSnapshot, 
+  doc, 
+  setDoc, 
+  deleteDoc, 
+  updateDoc, 
+  query, 
+  where, 
+  orderBy, 
+  addDoc,
+  runTransaction,
+  writeBatch
+} from 'firebase/firestore';
+import { 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  onAuthStateChanged, 
+  signOut,
+  User as FirebaseUser
+} from 'firebase/auth';
 
 export default function App() {
-  const [transactions, setTransactions] = useState<Transaction[]>(() => {
-    const saved = localStorage.getItem('transactions');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [debts, setDebts] = useState<Debt[]>(() => {
-    const saved = localStorage.getItem('debts');
-    let debtsData: Debt[] = saved ? JSON.parse(saved) : [];
-    
-    // Migration: Update existing debt creditor names to match new card names
-    debtsData = debtsData.map(debt => {
-      if (debt.creditor.includes('Cartão 1600')) {
-        return { ...debt, creditor: debt.creditor.replace('Cartão 1600', 'Sicoob') };
-      }
-      if (debt.creditor.includes('Cartão 500')) {
-        return { ...debt, creditor: debt.creditor.replace('Cartão 500', 'Mercado Pago') };
-      }
-      if (debt.creditor.includes('Cartão 200')) {
-        return { ...debt, creditor: debt.creditor.replace('Cartão 200', 'Nubank') };
-      }
-      return debt;
-    });
-    
-    return debtsData;
-  });
-
-  const [cards, setCards] = useState<CreditCard[]>(() => {
-    const saved = localStorage.getItem('cards');
-    let cardsData: CreditCard[];
-    
-    if (saved) {
-      cardsData = JSON.parse(saved);
-      // Migration: Update existing cards to new names/colors if they match old types
-      cardsData = cardsData.map(card => {
-        if (card.name === 'Cartão 1600' || card.name === 'Sicoob') {
-          return { ...card, name: 'Sicoob', closingDay: 1, dueDay: 11, color: '#16A34A' };
-        }
-        if (card.name === 'Cartão 500' || card.name === 'Mercado Pago') {
-          return { ...card, name: 'Mercado Pago', closingDay: 5, dueDay: 10, color: '#2563EB' };
-        }
-        if (card.name === 'Cartão 200' || card.name === 'Nubank') {
-          return { ...card, name: 'Nubank', closingDay: 12, dueDay: 20, color: '#9333EA' };
-        }
-        return card;
-      });
-      return cardsData;
-    }
-
-    // Default requested cards
-    return [
-      { id: 'cc-1', name: 'Sicoob', limit: 1600, closingDay: 1, dueDay: 11, color: '#16A34A' },
-      { id: 'cc-2', name: 'Mercado Pago', limit: 500, closingDay: 5, dueDay: 10, color: '#2563EB' },
-      { id: 'cc-3', name: 'Nubank', limit: 200, closingDay: 12, dueDay: 20, color: '#9333EA' }
-    ];
-  });
-
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>(() => {
-    const saved = localStorage.getItem('bankAccounts');
-    let accounts: BankAccount[];
-    
-    if (saved) {
-      accounts = JSON.parse(saved);
-      // Ensure Nubank exists if not already there
-      if (!accounts.find(a => a.name === 'Nubank')) {
-        accounts.push({ id: 'ba-3', name: 'Nubank', balance: 0, color: '#9333EA' });
-      }
-      return accounts;
-    }
-
-    return [
-      { id: 'ba-1', name: 'Mercado Pago', balance: 3400.65, color: '#2563EB' },
-      { id: 'ba-2', name: 'Sicoob', balance: 112.00, color: '#16A34A' },
-      { id: 'ba-3', name: 'Nubank', balance: 0, color: '#9333EA' }
-    ];
-  });
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [debts, setDebts] = useState<Debt[]>([]);
+  const [cards, setCards] = useState<CreditCard[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'debts' | 'cards' | 'accounts'>('dashboard');
   const [isAddingTransaction, setIsAddingTransaction] = useState(false);
@@ -86,23 +39,94 @@ export default function App() {
   const [isAddingDebt, setIsAddingDebt] = useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
   const [showCardManager, setShowCardManager] = useState(false);
+  const [editingDebtId, setEditingDebtId] = useState<string | null>(null);
 
-  // Persistence
+  // Auth Handling
   useEffect(() => {
-    localStorage.setItem('transactions', JSON.stringify(transactions));
-  }, [transactions]);
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setAuthReady(true);
+    });
+    return () => unsubscribe();
+  }, []);
 
-  useEffect(() => {
-    localStorage.setItem('debts', JSON.stringify(debts));
-  }, [debts]);
+  const loginWithGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (error) {
+      handleFirestoreError(error, 'write', 'auth');
+    }
+  };
 
-  useEffect(() => {
-    localStorage.setItem('cards', JSON.stringify(cards));
-  }, [cards]);
+  const logout = () => signOut(auth);
 
+  // Firestore Sync - Data scoped to current user
   useEffect(() => {
-    localStorage.setItem('bankAccounts', JSON.stringify(bankAccounts));
-  }, [bankAccounts]);
+    if (!currentUser) {
+      setTransactions([]);
+      setDebts([]);
+      setCards([]);
+      setBankAccounts([]);
+      return;
+    }
+
+    const qTransactions = query(collection(db, `users/${currentUser.uid}/transactions`), orderBy('date', 'desc'));
+    const qDebts = query(collection(db, `users/${currentUser.uid}/debts`));
+    const qCards = query(collection(db, `users/${currentUser.uid}/cards`));
+    const qBankAccounts = query(collection(db, `users/${currentUser.uid}/bankAccounts`));
+
+    const unsubTransactions = onSnapshot(qTransactions, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
+      setTransactions(data);
+    });
+
+    const unsubDebts = onSnapshot(qDebts, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Debt));
+      setDebts(data);
+    });
+
+    const unsubCards = onSnapshot(qCards, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CreditCard));
+      if (data.length === 0) {
+        // Initialize default cards
+        const defaults = [
+          { id: 'cc-1', name: 'Sicoob', limit: 1600, closingDay: 1, dueDay: 11, color: '#16A34A' },
+          { id: 'cc-2', name: 'Mercado Pago', limit: 500, closingDay: 5, dueDay: 10, color: '#2563EB' },
+          { id: 'cc-3', name: 'Nubank', limit: 200, closingDay: 12, dueDay: 20, color: '#9333EA' }
+        ];
+        defaults.forEach(d => {
+          const { id, ...rest } = d;
+          setDoc(doc(db, `users/${currentUser.uid}/cards`, id), rest);
+        });
+      }
+      setCards(data);
+    });
+
+    const unsubBankAccounts = onSnapshot(qBankAccounts, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount));
+      if (data.length === 0) {
+        // Initialize default accounts
+        const defaults = [
+          { id: 'ba-1', name: 'Mercado Pago', balance: 3400.65, color: '#2563EB' },
+          { id: 'ba-2', name: 'Sicoob', balance: 112.00, color: '#16A34A' },
+          { id: 'ba-3', name: 'Nubank', balance: 0, color: '#9333EA' }
+        ];
+        defaults.forEach(d => {
+          const { id, ...rest } = d;
+          setDoc(doc(db, `users/${currentUser.uid}/bankAccounts`, id), rest);
+        });
+      }
+      setBankAccounts(data);
+    });
+
+    return () => {
+      unsubTransactions();
+      unsubDebts();
+      unsubCards();
+      unsubBankAccounts();
+    };
+  }, [currentUser]);
 
   // Calculations
   const metrics = useMemo(() => {
@@ -112,7 +136,9 @@ export default function App() {
   }, [bankAccounts, debts]);
 
   // Handlers
-  const addTransaction = (t: Omit<Transaction, 'id'>, cardId?: string, bankAccountId?: string) => {
+  const addTransaction = async (t: Omit<Transaction, 'id'>, cardId?: string, bankAccountId?: string) => {
+    if (!currentUser) return;
+
     // 1. Limit validation for Credit Cards
     if (cardId && t.type === 'expense') {
       const card = cards.find(c => c.id === cardId);
@@ -137,21 +163,23 @@ export default function App() {
           return;
         }
         
-        setBankAccounts(prev => prev.map(ba => {
-          if (ba.id === bankAccountId) {
-            return {
-              ...ba,
-              balance: t.type === 'income' ? ba.balance + t.amount : ba.balance - t.amount
-            };
-          }
-          return ba;
-        }));
+        try {
+          const newBalance = t.type === 'income' ? account.balance + t.amount : account.balance - t.amount;
+          await updateDoc(doc(db, `users/${currentUser.uid}/bankAccounts`, bankAccountId), {
+            balance: Number(newBalance.toFixed(2))
+          });
+        } catch (error) {
+          handleFirestoreError(error, 'update', 'bankAccounts');
+        }
       }
     }
 
     // 3. Register transaction
-    const newTransaction: Transaction = { ...t, id: crypto.randomUUID(), bankAccountId };
-    setTransactions([newTransaction, ...transactions]);
+    try {
+      await addDoc(collection(db, `users/${currentUser.uid}/transactions`), { ...t, bankAccountId });
+    } catch (error) {
+      handleFirestoreError(error, 'create', 'transactions');
+    }
     
     // 4. Handle Credit Card specific logic (Smart Invoice)
     if (cardId && t.type === 'expense') {
@@ -161,41 +189,49 @@ export default function App() {
     setIsAddingTransaction(false);
   };
 
-  const transferFunds = (fromId: string, toId: string, amount: number) => {
+  const transferFunds = async (fromId: string, toId: string, amount: number) => {
+    if (!currentUser) return;
     const fromAccount = bankAccounts.find(ba => ba.id === fromId);
     if (!fromAccount || fromAccount.balance < amount) {
       alert('Saldo insuficiente para transferência!');
       return;
     }
 
-    setBankAccounts(prev => prev.map(ba => {
-      if (ba.id === fromId) return { ...ba, balance: ba.balance - amount };
-      if (ba.id === toId) return { ...ba, balance: ba.balance + amount };
-      return ba;
-    }));
+    try {
+      const batch = writeBatch(db);
+      const toAccount = bankAccounts.find(ba => ba.id === toId);
+      
+      batch.update(doc(db, `users/${currentUser.uid}/bankAccounts`, fromId), { balance: Number((fromAccount.balance - amount).toFixed(2)) });
+      batch.update(doc(db, `users/${currentUser.uid}/bankAccounts`, toId), { balance: Number(((toAccount?.balance || 0) + amount).toFixed(2)) });
+      
+      await batch.commit();
 
-    // Log the transfer as two related transactions (internal bookkeeping)
-    const date = new Date().toISOString().split('T')[0];
-    addTransaction({
-      description: `Transferência enviada para ${bankAccounts.find(b => b.id === toId)?.name}`,
-      amount,
-      type: 'expense',
-      category: 'Transferência',
-      date
-    }, undefined, fromId);
+      // Log the transfer
+      const date = new Date().toISOString().split('T')[0];
+      addTransaction({
+        description: `Transferência enviada para ${bankAccounts.find(b => b.id === toId)?.name}`,
+        amount,
+        type: 'expense',
+        category: 'Transferência',
+        date
+      }, undefined, fromId);
 
-    addTransaction({
-      description: `Transferência recebida de ${fromAccount.name}`,
-      amount,
-      type: 'income',
-      category: 'Transferência',
-      date
-    }, undefined, toId);
+      addTransaction({
+        description: `Transferência recebida de ${fromAccount.name}`,
+        amount,
+        type: 'income',
+        category: 'Transferência',
+        date
+      }, undefined, toId);
 
-    setIsTransferring(false);
+      setIsTransferring(false);
+    } catch (error) {
+      handleFirestoreError(error, 'write', 'transfer');
+    }
   };
 
-  const handleCardInvoiceAutoDebt = (amount: number, dateString: string, cardId: string) => {
+  const handleCardInvoiceAutoDebt = async (amount: number, dateString: string, cardId: string) => {
+    if (!currentUser) return;
     const card = cards.find(c => c.id === cardId);
     if (!card) return;
 
@@ -203,12 +239,9 @@ export default function App() {
     const purchaseDay = purchaseDate.getDate();
     
     let targetDate = new Date(purchaseDate);
-    // If after closing day, move to next month
     if (purchaseDay > card.closingDay) {
       targetDate.setMonth(targetDate.getMonth() + 1);
     }
-    
-    // Set to the configured due day
     targetDate.setDate(card.dueDay);
     
     const monthYearLabel = targetDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
@@ -218,37 +251,45 @@ export default function App() {
     const existingDebt = debts.find(d => d.creditor === creditorName && d.status !== 'paid');
 
     if (existingDebt) {
-      setDebts(debts.map(d => d.id === existingDebt.id ? {
-        ...d,
-        totalAmount: d.totalAmount + amount,
-        remainingAmount: d.remainingAmount + amount
-      } : d));
+      try {
+        await updateDoc(doc(db, `users/${currentUser.uid}/debts`, existingDebt.id), {
+          totalAmount: Number((existingDebt.totalAmount + amount).toFixed(2)),
+          remainingAmount: Number((existingDebt.remainingAmount + amount).toFixed(2))
+        });
+      } catch (error) {
+        handleFirestoreError(error, 'update', 'debts');
+      }
     } else {
-      const newDebt: Debt = {
-        id: crypto.randomUUID(),
-        creditor: creditorName,
-        totalAmount: amount,
-        remainingAmount: amount,
-        dueDate: dueDateString,
-        status: 'pending'
-      };
-      setDebts([newDebt, ...debts]);
+      try {
+        await addDoc(collection(db, `users/${currentUser.uid}/debts`), {
+          creditor: creditorName,
+          totalAmount: amount,
+          remainingAmount: amount,
+          dueDate: dueDateString,
+          status: 'pending',
+          payments: []
+        });
+      } catch (error) {
+        handleFirestoreError(error, 'create', 'debts');
+      }
     }
   };
 
-  const addDebt = (d: Omit<Debt, 'id' | 'remainingAmount' | 'status' | 'payments'>, installments: number = 1) => {
+  const addDebt = async (d: Omit<Debt, 'id' | 'remainingAmount' | 'status' | 'payments'>, installments: number = 1) => {
+    if (!currentUser) return;
+    const batch = writeBatch(db);
+    
     if (d.type === 'installments' && installments > 1) {
       const groupId = crypto.randomUUID();
-      const newDebts: Debt[] = [];
       const installmentAmount = Number((d.totalAmount / installments).toFixed(2));
       
       for (let i = 1; i <= installments; i++) {
         const dueDate = new Date(d.dueDate);
         dueDate.setMonth(dueDate.getMonth() + (i - 1));
         
-        newDebts.push({
+        const docRef = doc(collection(db, `users/${currentUser.uid}/debts`));
+        batch.set(docRef, {
           ...d,
-          id: crypto.randomUUID(),
           totalAmount: installmentAmount,
           remainingAmount: installmentAmount,
           dueDate: dueDate.toISOString().split('T')[0],
@@ -261,41 +302,40 @@ export default function App() {
           }
         });
       }
-      setDebts([...newDebts, ...debts]);
     } else if (d.type === 'fixed') {
       const recurringGroupId = crypto.randomUUID();
-      const newDebts: Debt[] = [];
-      
-      // Generate for next 12 months as "recurrent"
       for (let i = 0; i < 12; i++) {
         const dueDate = new Date(d.dueDate);
         dueDate.setMonth(dueDate.getMonth() + i);
-        
-        newDebts.push({
+        const docRef = doc(collection(db, `users/${currentUser.uid}/debts`));
+        batch.set(docRef, {
           ...d,
-          id: crypto.randomUUID(),
           remainingAmount: d.totalAmount,
           status: 'pending',
           payments: [],
           recurringGroupId
         });
       }
-      setDebts([...newDebts, ...debts]);
     } else {
-      const newDebt: Debt = {
+      const docRef = doc(collection(db, `users/${currentUser.uid}/debts`));
+      batch.set(docRef, {
         ...d,
-        id: crypto.randomUUID(),
         remainingAmount: d.totalAmount,
         status: 'pending',
         payments: []
-      };
-      setDebts([newDebt, ...debts]);
+      });
+    }
+    
+    try {
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, 'write', 'debts-batch');
     }
     setIsAddingDebt(false);
   };
 
-  const registerPayment = (debtId: string, amount: number, bankAccountId?: string) => {
-    if (!bankAccountId) {
+  const registerPayment = async (debtId: string, amount: number, bankAccountId?: string) => {
+    if (!currentUser || !bankAccountId) {
       alert('Selecione uma conta para realizar o pagamento.');
       return;
     }
@@ -310,8 +350,6 @@ export default function App() {
     }
 
     const paymentAmount = Math.min(amount, debt.remainingAmount);
-    
-    // Create payment record
     const newPayment: DebtPayment = {
       id: crypto.randomUUID(),
       amount: paymentAmount,
@@ -320,106 +358,205 @@ export default function App() {
       bankAccountName: account.name
     };
 
-    // Update debt
-    setDebts(
-      debts.map((d) => {
-        if (d.id === debtId) {
-          const remaining = Number((d.remainingAmount - paymentAmount).toFixed(2));
-          return {
-            ...d,
-            remainingAmount: remaining,
-            status: remaining <= 0 ? 'paid' : d.status,
-            payments: [...(d.payments || []), newPayment]
-          };
-        }
-        return d;
-      })
-    );
+    try {
+      const remaining = Number((debt.remainingAmount - paymentAmount).toFixed(2));
+      await updateDoc(doc(db, `users/${currentUser.uid}/debts`, debtId), {
+        remainingAmount: remaining,
+        status: remaining <= 0 ? 'paid' : debt.status,
+        payments: [...(debt.payments || []), newPayment]
+      });
 
-    // Register transaction and reduce bank balance
-    addTransaction({
-      amount: paymentAmount,
-      type: 'expense',
-      category: 'Dívida',
-      date: new Date().toISOString().split('T')[0],
-      description: `Pagamento: ${debt.creditor} ${debt.installmentInfo ? `(${debt.installmentInfo.current}/${debt.installmentInfo.total})` : ''}`,
-    }, undefined, bankAccountId);
+      addTransaction({
+        amount: paymentAmount,
+        type: 'expense',
+        category: 'Dívida',
+        date: new Date().toISOString().split('T')[0],
+        description: `Pagamento: ${debt.creditor} ${debt.installmentInfo ? `(${debt.installmentInfo.current}/${debt.installmentInfo.total})` : ''}`,
+      }, undefined, bankAccountId);
+    } catch (error) {
+      handleFirestoreError(error, 'update', 'debts-payment');
+    }
   };
 
-  const deleteDebt = (id: string, cascade: boolean = false) => {
+  const deleteDebt = async (id: string, cascade: boolean = false, keepCurrent: boolean = false) => {
+    if (!currentUser) return;
     const target = debts.find(d => d.id === id);
     if (!target) return;
 
     if (cascade && (target.installmentInfo || target.recurringGroupId)) {
       const gid = target.installmentInfo?.groupId || target.recurringGroupId;
+      if (!gid) {
+        await deleteDoc(doc(db, `users/${currentUser.uid}/debts`, id));
+        return;
+      }
       const targetDate = new Date(target.dueDate);
-      setDebts(prev => prev.filter(d => {
+      const toDelete = debts.filter(d => {
         const dGid = d.installmentInfo?.groupId || d.recurringGroupId;
-        if (dGid !== gid) return true;
-        return new Date(d.dueDate) < targetDate;
-      }));
+        if (dGid !== gid) return false;
+        const dDateValue = d.dueDate ? new Date(d.dueDate) : new Date(0);
+        if (keepCurrent) {
+          return dDateValue > targetDate; // Keep current, remove future
+        }
+        return dDateValue >= targetDate; // Remove current and future
+      });
+
+      try {
+        const batch = writeBatch(db);
+        toDelete.forEach(d => {
+          batch.delete(doc(db, `users/${currentUser.uid}/debts`, d.id));
+        });
+        await batch.commit();
+      } catch (error) {
+        handleFirestoreError(error, 'delete', 'debts-cascade');
+      }
     } else {
-      setDebts(prev => prev.filter(d => d.id !== id));
+      try {
+        await deleteDoc(doc(db, `users/${currentUser.uid}/debts`, id));
+      } catch (error) {
+        handleFirestoreError(error, 'delete', 'debts');
+      }
     }
   };
 
-  const deleteSeries = (groupId: string) => {
-    if (window.confirm('Tem certeza que deseja apagar toda a série de parcelas?')) {
-      setDebts(prev => prev.filter(d => (d.installmentInfo?.groupId !== groupId && d.recurringGroupId !== groupId)));
+  const deleteSeries = async (groupId: string) => {
+    if (!currentUser || !groupId) {
+      alert('Esta série não possui um identificador válido.');
+      return;
+    }
+    if (window.confirm('Tem certeza que deseja apagar toda a série de parcelas? Esta ação é irreversível.')) {
+      const toDelete = debts.filter(d => (d.installmentInfo?.groupId === groupId || d.recurringGroupId === groupId));
+      try {
+        const batch = writeBatch(db);
+        toDelete.forEach(d => {
+          batch.delete(doc(db, `users/${currentUser.uid}/debts`, d.id));
+        });
+        await batch.commit();
+      } catch (error) {
+        handleFirestoreError(error, 'delete', 'debts-series');
+      }
     }
   };
 
-  const updateDebtSmart = (id: string, updates: Partial<Debt>, applyToFuture: boolean = false) => {
+  const updateDebtSmart = async (id: string, updates: Partial<Debt>, applyToFuture: boolean = false) => {
+    if (!currentUser) return;
     const target = debts.find(d => d.id === id);
     if (!target) return;
 
     if (applyToFuture && (target.installmentInfo || target.recurringGroupId)) {
       const gid = target.installmentInfo?.groupId || target.recurringGroupId;
       const targetDate = new Date(target.dueDate);
-      setDebts(prev => prev.map(d => {
+      const toUpdate = debts.filter(d => {
         const dGid = d.installmentInfo?.groupId || d.recurringGroupId;
-        if (dGid === gid && new Date(d.dueDate) >= targetDate) {
-          // Calculate new due date for future items based on original offset if needed, 
-          // but usually updateDebt is for creditor/amount.
-          // If updating dueDate, it's more complex. We'll stick to amount/creditor for now.
-          const newObj = { ...d, ...updates };
-          if (updates.dueDate) {
-            // Adjust relative date? User said "alterar o valor de uma única parcela manualmente sem que o app recalcule as outras sozinho"
-            // Wait, "Liberação de Campos: Destrave os campos... Eu preciso conseguir alterar o valor de uma única parcela manualmente sem que o app recalcule as outras sozinho."
-            // This means by DEFAULT it's only the current one.
-          }
-          return newObj;
-        }
-        return d;
-      }));
+        return (dGid === gid && new Date(d.dueDate) >= targetDate);
+      });
+
+      try {
+        const batch = writeBatch(db);
+        toUpdate.forEach(d => {
+          batch.update(doc(db, `users/${currentUser.uid}/debts`, d.id), updates);
+        });
+        await batch.commit();
+      } catch (error) {
+        handleFirestoreError(error, 'update', 'debts-future');
+      }
     } else {
-      setDebts(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
+      try {
+        await updateDoc(doc(db, `users/${currentUser.uid}/debts`, id), updates);
+      } catch (error) {
+        handleFirestoreError(error, 'update', 'debts');
+      }
     }
   };
 
-  const deleteTransaction = (id: string) => {
-    setTransactions(transactions.filter(t => t.id !== id));
+  const deleteTransaction = async (id: string) => {
+    if (!currentUser) return;
+    try {
+      await deleteDoc(doc(db, `users/${currentUser.uid}/transactions`, id));
+    } catch (error) {
+      handleFirestoreError(error, 'delete', 'transactions');
+    }
   };
 
-  const updateTransaction = (id: string, updates: Partial<Transaction>) => {
-    setTransactions(transactions.map(t => t.id === id ? { ...t, ...updates } : t));
+  const updateTransaction = async (id: string, updates: Partial<Transaction>) => {
+    if (!currentUser) return;
+    try {
+      await updateDoc(doc(db, `users/${currentUser.uid}/transactions`, id), updates);
+    } catch (error) {
+      handleFirestoreError(error, 'update', 'transactions');
+    }
   };
 
-  const updateDebt = (id: string, updates: Partial<Debt>) => {
-    setDebts(debts.map(d => d.id === id ? { ...d, ...updates } : d));
+  const updateDebt = async (id: string, updates: Partial<Debt>) => {
+    if (!currentUser) return;
+    try {
+      await updateDoc(doc(db, `users/${currentUser.uid}/debts`, id), updates);
+    } catch (error) {
+      handleFirestoreError(error, 'update', 'debts');
+    }
   };
 
-  const updateBankAccount = (id: string, updates: Partial<BankAccount>) => {
-    setBankAccounts(bankAccounts.map(ba => ba.id === id ? { ...ba, ...updates } : ba));
+  const updateBankAccount = async (id: string, updates: Partial<BankAccount>) => {
+    if (!currentUser) return;
+    try {
+      await updateDoc(doc(db, `users/${currentUser.uid}/bankAccounts`, id), updates);
+    } catch (error) {
+      handleFirestoreError(error, 'update', 'bankAccounts');
+    }
   };
 
-  const updateCard = (id: string, updates: Partial<CreditCard>) => {
-    setCards(cards.map(c => c.id === id ? { ...c, ...updates } : c));
+  const updateCard = async (id: string, updates: Partial<CreditCard>) => {
+    if (!currentUser) return;
+    try {
+      await updateDoc(doc(db, `users/${currentUser.uid}/cards`, id), updates);
+    } catch (error) {
+      handleFirestoreError(error, 'update', 'cards');
+    }
   };
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
   };
+
+  if (!authReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-[#2563EB] border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-[#64748B] font-medium">Sincronizando seus dados...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center px-4">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white p-10 rounded-3xl shadow-2xl border border-[#E2E8F0] w-full max-w-md text-center"
+        >
+          <div className="w-20 h-20 bg-[#2563EB]/10 rounded-3xl flex items-center justify-center mx-auto mb-8">
+            <Wallet className="w-10 h-10 text-[#2563EB]" />
+          </div>
+          <h1 className="text-3xl font-black text-[#1E293B] mb-3">Finanza<span className="text-[#2563EB]">Flow</span></h1>
+          <p className="text-[#64748B] mb-10 text-lg">Seu controle financeiro avançado com inteligência de parcelamento.</p>
+          
+          <button 
+            onClick={loginWithGoogle}
+            className="w-full bg-white border-2 border-[#E2E8F0] text-[#1E293B] py-4 rounded-2xl font-black flex items-center justify-center gap-3 hover:border-[#2563EB] hover:bg-[#F8FAFC] transition-all transform active:scale-95 shadow-sm group"
+          >
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/bootstrap/google.svg" alt="" className="w-6 h-6" />
+            <span className="group-hover:text-[#2563EB]">Acessar com Google</span>
+          </button>
+          
+          <div className="mt-8 pt-8 border-t border-[#F1F5F9] text-[#94A3B8] text-sm">
+            Seus dados são sincronizados em tempo real com segurança total.
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#1E293B] font-sans">
@@ -432,6 +569,12 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            {currentUser && (
+              <div className="flex items-center gap-2 mr-2">
+                <img src={currentUser.photoURL || ''} alt="" className="w-8 h-8 rounded-full border border-[#E2E8F0]" />
+                <button onClick={logout} className="text-xs font-bold text-[#64748B] hover:text-[#EF4444]">Sair</button>
+              </div>
+            )}
             <button 
               onClick={() => setShowCardManager(!showCardManager)}
               className="p-2 text-[#64748B] hover:text-[#2563EB] transition-colors"
@@ -598,35 +741,55 @@ export default function App() {
                     <table className="w-full text-left">
                       <thead>
                         <tr className="bg-[#FCFCFD] border-b border-[#F1F5F9]">
-                          <th className="px-5 py-3 text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider">Credor / Fatura</th>
-                          <th className="px-5 py-3 text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider">Valor</th>
-                          <th className="px-5 py-3 text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider">Conta p/ Pagar</th>
+                          <th className="px-5 py-3 text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider">Credor / Vencimento</th>
+                          <th className="px-5 py-3 text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider text-right">Valor Restante</th>
+                          <th className="px-5 py-3 text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider text-center">Ação</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#F1F5F9]">
-                        {debts.filter(d => d.status !== 'paid').sort((a,b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()).slice(0, 8).map((debt) => (
-                          <tr key={debt.id} className="hover:bg-[#F8FAFC] transition-colors text-sm">
+                        {debts.filter(d => d.status !== 'paid').sort((a,b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()).slice(0, 10).map((debt) => (
+                          <tr key={debt.id} className="hover:bg-[#F8FAFC] transition-colors group">
                             <td className="px-5 py-3.5">
-                              <p className="font-semibold text-[#1E293B]">{debt.creditor}</p>
-                              <p className="text-[10px] text-[#94A3B8] font-bold uppercase">{new Date(debt.dueDate).toLocaleDateString('pt-BR')}</p>
+                              <p className="font-bold text-[#1E293B] text-sm">{debt.creditor}</p>
+                              <p className="text-[10px] text-[#2563EB] font-black uppercase tracking-tighter">
+                                {new Date(debt.dueDate).toLocaleDateString('pt-BR')}
+                              </p>
                             </td>
-                            <td className="px-5 py-3.5 font-bold text-[#DC2626]">
-                              {formatCurrency(debt.remainingAmount)}
+                            <td className="px-5 py-3.5 text-right">
+                              <div className="flex flex-col items-end">
+                                <input 
+                                  type="number"
+                                  step="0.01"
+                                  className="w-24 text-right font-black text-sm text-[#DC2626] bg-transparent border-b border-transparent focus:border-[#FEE2E2] focus:bg-white outline-none px-1 rounded"
+                                  defaultValue={debt.remainingAmount}
+                                  onBlur={(e) => {
+                                    const val = Number(e.target.value);
+                                    if (val !== debt.remainingAmount) {
+                                      updateDebt(debt.id, { 
+                                        remainingAmount: val,
+                                        status: val <= 0 ? 'paid' : 'pending'
+                                      });
+                                    }
+                                  }}
+                                />
+                                <span className="text-[9px] font-bold text-[#CBD5E1] uppercase tracking-tighter">Clique p/ editar</span>
+                              </div>
                             </td>
                             <td className="px-5 py-3.5">
-                              <div className="flex gap-2">
+                              <div className="flex justify-center gap-2" onClick={(e) => e.stopPropagation()}>
                                 <select 
-                                  id={`pay-account-${debt.id}`}
-                                  className="text-[10px] font-bold bg-[#F8FAFC] border border-[#E2E8F0] p-1 rounded outline-none"
+                                  id={`dash-pay-account-${debt.id}`}
+                                  className="text-[10px] font-black bg-[#F1F5F9] border border-[#E2E8F0] p-1.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]"
                                 >
-                                  {bankAccounts.map(ba => <option key={ba.id} value={ba.id}>{ba.name}</option>)}
+                                  {bankAccounts.map(ba => ba && <option key={ba.id} value={ba.id}>{ba.name}</option>)}
                                 </select>
                                 <button
-                                  onClick={() => {
-                                    const select = document.getElementById(`pay-account-${debt.id}`) as HTMLSelectElement;
-                                    registerPayment(debt.id, debt.remainingAmount, select.value);
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const select = document.getElementById(`dash-pay-account-${debt.id}`) as HTMLSelectElement;
+                                    registerPayment(debt.id, debt.remainingAmount || 0, select?.value);
                                   }}
-                                  className="bg-[#EFF6FF] text-[#2563EB] px-3 py-1 rounded-md text-[10px] font-bold hover:bg-[#2563EB] hover:text-white transition-all whitespace-nowrap"
+                                  className="bg-[#2563EB] text-white px-4 py-1.5 rounded-lg text-[10px] font-bold hover:bg-[#1D4ED8] shadow-sm transform active:scale-95 transition-all"
                                 >
                                   Pagar
                                 </button>
@@ -634,6 +797,13 @@ export default function App() {
                             </td>
                           </tr>
                         ))}
+                        {debts.filter(d => d.status !== 'paid').length === 0 && (
+                          <tr>
+                            <td colSpan={3} className="px-5 py-12 text-center text-[#94A3B8] font-medium text-xs italic">
+                              Não há pagamentos pendentes selecionados.
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -1140,186 +1310,220 @@ export default function App() {
               )}
 
               <div className="grid grid-cols-1 gap-4">
-                {debts.map((debt) => (
-                  <div key={debt.id} className="bg-white p-6 rounded-xl border border-[#E2E8F0] shadow-sm relative overflow-hidden group">
-                    {debt.status === 'paid' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#16A34A]" />}
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3">
-                          <input 
-                            className="font-bold text-lg text-[#1E293B] bg-transparent outline-none focus:text-[#2563EB]"
-                            value={debt.creditor}
-                            onChange={(e) => updateDebt(debt.id, { creditor: e.target.value })}
-                            onBlur={(e) => {
-                              if (debt.installmentInfo || debt.recurringGroupId) {
-                                if (window.confirm("Deseja aplicar este nome a esta e todas as parcelas FUTURAS?")) {
-                                  updateDebtSmart(debt.id, { creditor: e.target.value }, true);
-                                }
-                              }
-                            }}
-                          />
-                          {debt.installmentInfo && (
-                            <span className="text-xs text-[#64748B] font-medium">({debt.installmentInfo.current}/{debt.installmentInfo.total})</span>
-                          )}
-                          <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
-                            debt.status === 'paid' ? 'bg-[#F0FDF4] text-[#166534]' : 'bg-[#FEF2F2] text-[#991B1B]'
-                          }`}>
-                            {debt.status === 'paid' ? 'Liquidada' : debt.remainingAmount < debt.totalAmount ? 'Baixa Parcial' : 'Em Aberto'}
-                          </span>
-                          <span className="text-[10px] font-bold uppercase text-[#94A3B8] bg-[#F1F5F9] px-2 py-0.5 rounded">
-                            {debt.type === 'installments' ? 'Parcelada' : debt.type === 'fixed' ? 'Fixa' : 'Única'}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[11px] text-[#94A3B8] font-bold uppercase">Vencimento:</span>
-                          <input 
-                            type="date"
-                            className="text-[11px] text-[#94A3B8] font-bold uppercase bg-transparent outline-none"
-                            value={debt.dueDate}
-                            onChange={(e) => updateDebt(debt.id, { dueDate: e.target.value })}
-                          />
-                        </div>
-                        
-                        {debt.payments && debt.payments.length > 0 && (
-                          <div className="mt-4">
-                            <p className="text-[10px] font-bold text-[#64748B] uppercase mb-2">Histórico de Pagamentos</p>
-                            <div className="space-y-1.5">
-                              {debt.payments.map(p => (
-                                <div key={p.id} className="flex justify-between items-center text-[11px] bg-[#F8FAFC] p-2 rounded border border-[#F1F5F9]">
-                                  <span className="font-medium text-[#1E293B]">{new Date(p.date).toLocaleDateString('pt-BR')} via {p.bankAccountName}</span>
-                                  <span className="font-bold text-[#16A34A]">{formatCurrency(p.amount)}</span>
-                                </div>
-                              ))}
+                {debts.map((debt) => {
+                  const isEditing = editingDebtId === debt.id;
+                  
+                  return (
+                    <div 
+                      key={debt.id} 
+                      className={`bg-white p-6 rounded-2xl border transition-all ${isEditing ? 'border-[#2563EB] shadow-lg ring-1 ring-[#2563EB]/10' : 'border-[#E2E8F0] shadow-sm'}`}
+                    >
+                      <div className="flex flex-col gap-6">
+                        {/* Header Info */}
+                        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                          <div className="flex-1 space-y-4">
+                            <div className="flex items-center flex-wrap gap-2">
+                              {isEditing ? (
+                                <input 
+                                  id={`edit-creditor-${debt.id}`}
+                                  type="text"
+                                  className="font-bold text-lg text-[#1E293B] bg-[#F8FAFC] border border-[#E2E8F0] px-3 py-1 rounded-lg outline-none focus:ring-2 focus:ring-[#2563EB] w-full"
+                                  defaultValue={debt.creditor}
+                                />
+                              ) : (
+                                <h3 className="font-black text-xl text-[#1E293B] tracking-tight">{debt.creditor}</h3>
+                              )}
+                              {debt.installmentInfo && (
+                                <span className="text-xs text-[#64748B] font-bold bg-[#F1F5F9] px-2 py-1 rounded-md">
+                                  {debt.installmentInfo.current}/{debt.installmentInfo.total}
+                                </span>
+                              )}
+                              <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-md ${
+                                debt.status === 'paid' ? 'bg-[#DCFCE7] text-[#166534]' : 'bg-[#FEE2E2] text-[#991B1B]'
+                              }`}>
+                                {debt.status === 'paid' ? 'Liquidada' : 'Pendente'}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="flex flex-col">
+                                <label className="text-[9px] font-black text-[#94A3B8] uppercase tracking-widest mb-1">Vencimento</label>
+                                {isEditing ? (
+                                  <input 
+                                    id={`edit-date-${debt.id}`}
+                                    type="date"
+                                    className="text-sm font-bold text-[#1E293B] bg-[#F8FAFC] border border-[#E2E8F0] p-2 rounded-lg outline-none"
+                                    defaultValue={debt.dueDate || ''}
+                                  />
+                                ) : (
+                                  <p className="text-sm font-bold text-[#1E293B]">{debt.dueDate ? new Date(debt.dueDate).toLocaleDateString('pt-BR') : 'Sem data'}</p>
+                                )}
+                              </div>
+                              <div className="flex flex-col">
+                                <label className="text-[9px] font-black text-[#94A3B8] uppercase tracking-widest mb-1">Total Lançado</label>
+                                {isEditing ? (
+                                  <input 
+                                    id={`edit-total-${debt.id}`}
+                                    type="number"
+                                    className="text-sm font-bold text-[#1E293B] bg-[#F8FAFC] border border-[#E2E8F0] p-2 rounded-lg outline-none"
+                                    defaultValue={debt.totalAmount}
+                                    step="0.01"
+                                  />
+                                ) : (
+                                  <p className="text-sm font-bold text-[#64748B]">{formatCurrency(debt.totalAmount)}</p>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        )}
-                      </div>
 
-                      <div className="flex flex-col md:items-end">
-                        <p className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider">Saldo Devedor</p>
-                        <input 
-                          type="number"
-                          step="0.01"
-                          className={`text-2xl font-black bg-transparent text-right outline-none focus:text-[#2563EB] w-32 ${debt.status === 'paid' ? 'text-[#16A34A]' : 'text-[#DC2626]'}`}
-                          value={debt.remainingAmount}
-                          onChange={(e) => {
-                            const rem = Number(e.target.value);
-                            updateDebt(debt.id, { 
-                              remainingAmount: rem,
-                              status: rem <= 0 ? 'paid' : 'pending' 
-                            });
-                          }}
-                          onBlur={(e) => {
-                            if (debt.installmentInfo || debt.recurringGroupId) {
-                              const val = Number(e.target.value);
-                              if (window.confirm("Deseja aplicar este valor de saldo devedor a todas as parcelas FUTURAS?")) {
-                                updateDebtSmart(debt.id, { remainingAmount: val, status: val <= 0 ? 'paid' : 'pending' }, true);
-                              }
-                            }
-                          }}
-                        />
-                        <div className="flex items-center gap-1">
-                          <span className="text-[10px] text-[#CBD5E1] font-medium">Total:</span>
-                          <input 
-                             type="number"
-                             step="0.01"
-                             className="text-[10px] text-[#CBD5E1] font-medium bg-transparent text-right outline-none w-16"
-                             value={debt.totalAmount}
-                             onChange={(e) => updateDebt(debt.id, { totalAmount: Number(e.target.value) })}
-                             onBlur={(e) => {
-                               if (debt.installmentInfo || debt.recurringGroupId) {
-                                 const val = Number(e.target.value);
-                                 if (window.confirm("Deseja aplicar esta alteração de valor total a todas as parcelas FUTURAS?")) {
-                                   updateDebtSmart(debt.id, { totalAmount: val }, true);
-                                 }
-                               }
-                             }}
-                          />
+                          <div className="flex flex-col md:items-end gap-2">
+                            <label className="text-[10px] font-black text-[#94A3B8] uppercase tracking-widest">Saldo Devedor</label>
+                            {isEditing ? (
+                              <input 
+                                id={`edit-remaining-${debt.id}`}
+                                type="number"
+                                className="text-3xl font-black text-[#DC2626] bg-[#F8FAFC] border border-[#E2E8F0] p-3 rounded-xl outline-none text-right w-full md:w-36 focus:ring-4 focus:ring-[#DC2626]/5"
+                                defaultValue={debt.remainingAmount}
+                                step="0.01"
+                              />
+                            ) : (
+                              <p className={`text-4xl font-black ${debt.status === 'paid' ? 'text-[#16A34A]' : 'text-[#DC2626]'} tracking-tighter`}>
+                                {formatCurrency(debt.remainingAmount)}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </div>
 
-                    <div className="mt-6 pt-6 border-t border-[#F1F5F9] flex items-center justify-between">
-                      <div className="flex gap-4">
-                        <button 
-                          onClick={() => {
-                            if (debt.installmentInfo || debt.recurringGroupId) {
-                              if (window.confirm("Deseja excluir esta parcela e TODAS AS FUTURAS? (Clique 'Cancelar' para excluir apenas esta)")) {
-                                deleteDebt(debt.id, true);
-                              } else {
-                                if (window.confirm("Deseja excluir APENAS esta parcela?")) {
-                                  deleteDebt(debt.id, false);
+                        {/* Actions Row */}
+                        <div className="flex flex-wrap items-center justify-between gap-4 pt-6 border-t border-[#F1F5F9]">
+                          <div className="flex flex-wrap gap-2">
+                            {!isEditing ? (
+                              <button 
+                                onClick={() => setEditingDebtId(debt.id)}
+                                className="flex items-center gap-2 bg-[#F1F5F9] text-[#1E293B] px-4 py-2 rounded-xl text-xs font-black uppercase hover:bg-[#E2E8F0] transition-all"
+                              >
+                                Editar Lançamento
+                              </button>
+                            ) : (
+                              <div className="flex gap-2">
+                                <button 
+                                  onClick={() => {
+                                    const creditor = (document.getElementById(`edit-creditor-${debt.id}`) as HTMLInputElement).value;
+                                    const date = (document.getElementById(`edit-date-${debt.id}`) as HTMLInputElement).value;
+                                    const total = Number((document.getElementById(`edit-total-${debt.id}`) as HTMLInputElement).value);
+                                    const remaining = Number((document.getElementById(`edit-remaining-${debt.id}`) as HTMLInputElement).value);
+                                    
+                                    const updates: Partial<Debt> = { 
+                                      creditor, 
+                                      dueDate: date, 
+                                      totalAmount: total, 
+                                      remainingAmount: remaining, 
+                                      status: (remaining <= 0 ? 'paid' : 'pending') as 'paid' | 'pending' 
+                                    };
+                                    
+                                    if (debt.installmentInfo || debt.recurringGroupId) {
+                                      if (window.confirm("Deseja aplicar estas alterações a esta e todas as parcelas FUTURAS?")) {
+                                        updateDebtSmart(debt.id, updates, true);
+                                      } else {
+                                        updateDebtSmart(debt.id, updates, false);
+                                      }
+                                    } else {
+                                      updateDebtSmart(debt.id, updates, false);
+                                    }
+                                    setEditingDebtId(null);
+                                  }}
+                                  className="bg-[#16A34A] text-white px-6 py-2 rounded-xl text-xs font-black uppercase shadow-lg shadow-green-200 hover:bg-[#15803D]"
+                                >
+                                  Salvar
+                                </button>
+                                <button 
+                                  onClick={() => setEditingDebtId(null)}
+                                  className="bg-white border border-[#E2E8F0] text-[#64748B] px-6 py-2 rounded-xl text-xs font-black uppercase"
+                                >
+                                  Cancelar
+                                </button>
+                              </div>
+                            )}
+
+                            <button 
+                              onClick={() => {
+                                if (debt.installmentInfo || debt.recurringGroupId) {
+                                  if (window.confirm("Deseja excluir esta parcela e TODAS AS FUTURAS? (Clique 'Cancelar' para excluir apenas esta)")) {
+                                    deleteDebt(debt.id, true);
+                                  } else {
+                                    if (window.confirm("Deseja excluir APENAS esta parcela?")) {
+                                      deleteDebt(debt.id, false);
+                                    }
+                                  }
+                                } else {
+                                  if (window.confirm("Deseja excluir este lançamento?")) {
+                                    deleteDebt(debt.id);
+                                  }
                                 }
-                              }
-                            } else {
-                              if (window.confirm("Deseja excluir este lançamento?")) {
-                                deleteDebt(debt.id);
-                              }
-                            }
-                          }} 
-                          className="text-[#CBD5E1] hover:text-[#DC2626] transition-colors"
-                          title="Excluir"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
+                              }} 
+                              className="p-2 text-[#94A3B8] hover:text-[#DC2626] transition-colors"
+                            >
+                              <Trash2 className="w-5 h-5" />
+                            </button>
+                            
+                            {(debt.installmentInfo || debt.recurringGroupId) && (
+                              <button 
+                                onClick={() => deleteSeries(debt.installmentInfo?.groupId || debt.recurringGroupId!)}
+                                className="text-[10px] font-black text-[#94A3B8] border border-[#E2E8F0] px-3 py-1 underline rounded-lg hover:bg-[#FEF2F2] hover:text-[#DC2626] transition-all"
+                              >
+                                Limpar Série
+                              </button>
+                            )}
 
-                        {(debt.installmentInfo || debt.recurringGroupId) && (
-                          <button 
-                            onClick={() => deleteSeries(debt.installmentInfo?.groupId || debt.recurringGroupId!)}
-                            className="text-[10px] font-bold text-[#94A3B8] border border-[#E2E8F0] px-2 py-1 rounded hover:bg-[#FEF2F2] hover:text-[#DC2626] transition-colors"
-                          >
-                            Limpar Série
-                          </button>
-                        )}
+                            {debt.type === 'fixed' && !debt.isCancelled && (
+                              <button 
+                                onClick={() => {
+                                  if (window.confirm('Deseja encerrar a recorrência? Todas as parcelas APÓS esta serão removidas.')) {
+                                    deleteDebt(debt.id, true, true);
+                                    updateDebt(debt.id, { isCancelled: true });
+                                  }
+                                }}
+                                className="text-[10px] font-black text-[#E11D48] border border-dashed border-[#FECDD3] px-3 py-1 rounded-lg hover:bg-[#FFF1F2]"
+                              >
+                                Finalizar Recorrência
+                              </button>
+                            )}
+                          </div>
 
-                        {debt.type === 'fixed' && !debt.isCancelled && (
-                          <button 
-                            onClick={() => {
-                              if (window.confirm('Deseja encerrar a recorrência? As parcelas futuras deste grupo serão removidas.')) {
-                                deleteDebt(debt.id, true);
-                                updateDebt(debt.id, { isCancelled: true });
-                              }
-                            }}
-                            className="text-[10px] font-bold text-[#E11D48] border border-[#FECDD3] px-2 py-1 rounded hover:bg-[#FFF1F2]"
-                          >
-                            Encerrar Recorrência
-                          </button>
-                        )}
-                      </div>
-                      
-                      {debt.status !== 'paid' && (
-                        <div className="flex items-center gap-2">
-                          <select 
-                            id={`pay-account-item-${debt.id}`}
-                            className="bg-[#F8FAFC] border border-[#E2E8F0] px-3 py-2 rounded-lg text-xs font-bold outline-none"
-                          >
-                            {bankAccounts.map(ba => <option key={ba.id} value={ba.id}>{ba.name}</option>)}
-                          </select>
-                          <input
-                            id={`pay-input-${debt.id}`}
-                            type="number"
-                            defaultValue={debt.remainingAmount}
-                            className="w-24 bg-[#F8FAFC] border border-[#E2E8F0] px-3 py-2 rounded-lg text-sm font-semibold outline-none focus:ring-1 focus:ring-[#2563EB]"
-                          />
-                          <button
-                            onClick={() => {
-                              const input = document.getElementById(`pay-input-${debt.id}`) as HTMLInputElement;
-                              const select = document.getElementById(`pay-account-item-${debt.id}`) as HTMLSelectElement;
-                              const val = Number(input.value);
-                              if (val > 0) {
-                                registerPayment(debt.id, val, select.value);
-                                input.value = '';
-                              }
-                            }}
-                            className="bg-[#2563EB] text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-[#1D4ED8] transition-all"
-                          >
-                            Pagar
-                          </button>
+                          {debt.status !== 'paid' && !isEditing && (
+                            <div className="flex items-center gap-2 bg-[#F8FAFC] p-1.5 rounded-2xl border border-[#F1F5F9]">
+                              <select 
+                                id={`manage-pay-account-${debt.id}`}
+                                className="bg-transparent text-[10px] font-black uppercase outline-none px-2"
+                              >
+                                {bankAccounts.map(ba => <option key={ba.id} value={ba.id}>{ba.name}</option>)}
+                              </select>
+                              <input
+                                id={`manage-pay-input-${debt.id}`}
+                                type="number"
+                                defaultValue={debt.remainingAmount}
+                                className="w-20 bg-white border border-[#E2E8F0] px-3 py-1.5 rounded-xl text-xs font-black text-[#2563EB] outline-none"
+                              />
+                              <button
+                                onClick={() => {
+                                  const input = document.getElementById(`manage-pay-input-${debt.id}`) as HTMLInputElement;
+                                  const select = document.getElementById(`manage-pay-account-${debt.id}`) as HTMLSelectElement;
+                                  const val = Number(input.value);
+                                  if (val > 0) {
+                                    registerPayment(debt.id, val, select.value);
+                                  }
+                                }}
+                                className="bg-[#1E293B] text-white px-5 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-black transition-all"
+                              >
+                                Pagar
+                              </button>
+                            </div>
+                          )}
                         </div>
-                      )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </motion.div>
           )}
