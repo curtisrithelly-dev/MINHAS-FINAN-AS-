@@ -392,16 +392,24 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#1E293B] font-sans">
-      {/* Header */}
-      <header className="bg-white border-b border-[#E2E8F0] sticky top-0 z-30">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <header className="bg-white border-b border-[#E2E8F0] sticky top-0 z-30">
+        <div className="max-w-6xl mx-auto px-4 md:px-6 h-auto md:h-16 flex flex-col md:flex-row items-center justify-between py-4 md:py-0 gap-4">
+          <div className="flex items-center justify-between w-full md:w-auto">
             <div className="font-bold text-xl tracking-tight text-[#2563EB]">
-              Finança<span className="text-[#64748B] ml-1">Curti</span>
+              Finanza<span className="text-[#64748B] ml-1">Curti</span>
+            </div>
+            <div className="flex items-center gap-2 md:hidden">
+              <button 
+                onClick={() => setShowCardManager(!showCardManager)}
+                className="p-2 text-[#64748B] hover:text-[#2563EB] transition-colors"
+                title="Gerenciar Cartões"
+              >
+                <CreditCardIcon className="w-5 h-5" />
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 mr-2">
+          <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
+            <div className="hidden md:flex items-center gap-2">
               <div className="flex items-center gap-2 px-3 py-1 bg-[#F1F5F9] rounded-xl border border-[#E2E8F0]">
                 <button 
                   onClick={exportBackup}
@@ -417,34 +425,52 @@ export default function App() {
                 </label>
               </div>
             </div>
+            
+            <nav className="flex gap-1 bg-[#F1F5F9] p-1 rounded-xl w-full md:w-auto overflow-x-auto no-scrollbar">
+              <div className="flex gap-1 min-w-max">
+                {(['dashboard', 'transactions', 'debts', 'negotiations', 'cards', 'accounts'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    id={`tab-${tab}`}
+                    onClick={() => setActiveTab(tab)}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap min-h-[40px] flex items-center justify-center ${
+                      activeTab === tab ? 'bg-white text-[#2563EB] shadow-sm' : 'text-[#64748B] hover:text-[#1E293B]'
+                    }`}
+                  >
+                    {tab === 'accounts' ? 'Bancos' : 
+                     tab === 'negotiations' ? 'Negociações' :
+                     tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </nav>
+
             <button 
               onClick={() => setShowCardManager(!showCardManager)}
-              className="p-2 text-[#64748B] hover:text-[#2563EB] transition-colors"
+              className="hidden md:block p-2 text-[#64748B] hover:text-[#2563EB] transition-colors"
               title="Gerenciar Cartões"
             >
               <CreditCardIcon className="w-5 h-5" />
             </button>
-            <nav className="flex gap-1 bg-[#F1F5F9] p-1 rounded-xl">
-              {(['dashboard', 'transactions', 'debts', 'negotiations', 'cards', 'accounts'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  id={`tab-${tab}`}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-                    activeTab === tab ? 'bg-white text-[#2563EB] shadow-sm' : 'text-[#64748B] hover:text-[#1E293B]'
-                  }`}
+
+            {/* Mobile Backup Actions - moved to footer or a menu for better UX, but keeping here as small icons for now */}
+            <div className="flex md:hidden items-center gap-4 w-full justify-center pb-2 border-t border-[#F1F5F9] pt-2 mt-1">
+               <button 
+                  onClick={exportBackup}
+                  className="flex items-center gap-2 text-[10px] font-bold text-[#64748B] uppercase"
                 >
-                  {tab === 'accounts' ? 'Bancos' : 
-                   tab === 'negotiations' ? 'Negociações' :
-                   tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  <Download className="w-3 h-3" /> Exportar
                 </button>
-              ))}
-            </nav>
+                <label className="flex items-center gap-2 text-[10px] font-bold text-[#64748B] uppercase cursor-pointer">
+                  <Upload className="w-3 h-3" /> Importar
+                  <input type="file" accept=".json" onChange={importBackup} className="hidden" />
+                </label>
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8">
+      <main className="max-w-6xl mx-auto px-4 md:px-6 py-4 md:py-8">
         <AnimatePresence>
           {showCardManager && (
             <motion.div
@@ -460,7 +486,7 @@ export default function App() {
                   </h3>
                   <button onClick={() => setShowCardManager(false)} className="text-xs font-bold text-[#2563EB] uppercase">Fechar</button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
                   {cards.map((card, idx) => (
                     <div key={card.id} className="p-4 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC]">
                       <input 
@@ -532,42 +558,44 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               className="space-y-6"
             >
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="bg-white p-5 rounded-xl border border-[#E2E8F0] shadow-sm">
-                  <p className="text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-2">Saldo Total (Bancos)</p>
-                  <p className={`text-3xl font-bold ${metrics.balance >= 0 ? 'text-[#16A34A]' : 'text-[#DC2626]'}`}>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6">
+                <div className="bg-white p-4 md:p-5 rounded-xl border border-[#E2E8F0] shadow-sm">
+                  <p className="text-[9px] md:text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1 md:mb-2 text-center md:text-left">Saldo (Bancos)</p>
+                  <p className={`text-xl md:text-3xl font-bold text-center md:text-left ${metrics.balance >= 0 ? 'text-[#16A34A]' : 'text-[#DC2626]'}`}>
                     {formatCurrency(metrics.balance)}
                   </p>
                 </div>
-                <div className="bg-white p-5 rounded-xl border border-[#E2E8F0] shadow-sm">
-                  <p className="text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-2">Dívidas Gerais</p>
-                  <p className="text-3xl font-bold text-[#DC2626]">
+                <div className="bg-white p-4 md:p-5 rounded-xl border border-[#E2E8F0] shadow-sm">
+                  <p className="text-[9px] md:text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1 md:mb-2 text-center md:text-left">Dívidas Gerais</p>
+                  <p className="text-xl md:text-3xl font-bold text-[#DC2626] text-center md:text-left">
                     {formatCurrency(debts.filter(d => !d.creditor.startsWith('Fatura:')).reduce((acc, d) => acc + d.remainingAmount, 0))}
                   </p>
                 </div>
-                <div className="bg-white p-5 rounded-xl border border-[#E2E8F0] shadow-sm flex flex-col justify-center gap-2">
-                  <button 
-                    onClick={() => { setActiveTab('accounts'); setIsAddingIncome(true); }}
-                    className="w-full bg-[#16A34A] text-white py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide hover:bg-[#15803d] transition-colors"
-                  >
-                    + Adicionar Receita
-                  </button>
-                  <button 
-                    onClick={() => { setActiveTab('transactions'); setIsAddingTransaction(true); }}
-                    className="w-full bg-[#2563EB] text-white py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide hover:bg-[#1D4ED8] transition-colors"
-                  >
-                    + Novo Gasto
-                  </button>
+                <div className="bg-white p-4 md:p-5 rounded-xl border border-[#E2E8F0] shadow-sm flex flex-col justify-center gap-2 col-span-2 md:col-span-1">
+                  <div className="grid grid-cols-2 md:grid-cols-1 gap-2">
+                    <button 
+                      onClick={() => { setActiveTab('accounts'); setIsAddingIncome(true); }}
+                      className="w-full bg-[#16A34A] text-white py-2.5 rounded-lg text-[9px] md:text-[10px] font-bold uppercase tracking-wide hover:bg-[#15803d]"
+                    >
+                      + Receita
+                    </button>
+                    <button 
+                      onClick={() => { setActiveTab('transactions'); setIsAddingTransaction(true); }}
+                      className="w-full bg-[#2563EB] text-white py-2.5 rounded-lg text-[9px] md:text-[10px] font-bold uppercase tracking-wide hover:bg-[#1D4ED8]"
+                    >
+                      + Gasto
+                    </button>
+                  </div>
                   <button 
                     onClick={() => { setActiveTab('accounts'); setIsTransferring(true); }}
-                    className="w-full bg-white text-[#2563EB] border border-[#2563EB] py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide hover:bg-[#EFF6FF] transition-colors"
+                    className="w-full bg-white text-[#2563EB] border border-[#2563EB] py-2 rounded-lg text-[9px] md:text-[10px] font-bold uppercase tracking-wide"
                   >
-                    Transferir Saldo
+                    Transferir
                   </button>
                 </div>
-                <div className="bg-white p-5 rounded-xl border border-[#E2E8F0] shadow-sm">
-                  <p className="text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-2">Total Faturas</p>
-                  <p className="text-3xl font-bold text-[#F59E0B]">
+                <div className="bg-white p-4 md:p-5 rounded-xl border border-[#E2E8F0] shadow-sm col-span-2 md:col-span-1">
+                  <p className="text-[9px] md:text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1 md:mb-2 text-center md:text-left">Total Faturas</p>
+                  <p className="text-xl md:text-3xl font-bold text-[#F59E0B] text-center md:text-left">
                     {formatCurrency(debts.filter(d => d.creditor.startsWith('Fatura:')).reduce((acc, d) => acc + d.remainingAmount, 0))}
                   </p>
                 </div>
@@ -579,10 +607,11 @@ export default function App() {
                 <div className="md:col-span-8 bg-white rounded-xl border border-[#E2E8F0] shadow-sm flex flex-col overflow-hidden">
                   <div className="p-5 border-b border-[#F1F5F9] bg-[#FCFCFD] flex justify-between items-center">
                     <h2 className="font-bold text-sm uppercase tracking-tight text-[#1E293B]">Próximos Pagamentos</h2>
-                    <button onClick={() => setActiveTab('debts')} className="text-[11px] font-bold text-[#2563EB] hover:underline uppercase tracking-wide">Gerenciar Proventos</button>
+                    <button onClick={() => setActiveTab('debts')} className="text-[11px] font-bold text-[#2563EB] hover:underline uppercase tracking-wide">Ver Todos</button>
                   </div>
-                  <div className="overflow-auto max-h-[400px]">
-                    <table className="w-full text-left">
+                  <div className="overflow-auto max-h-[500px]">
+                    {/* Desktop Table */}
+                    <table className="w-full text-left hidden md:table">
                       <thead>
                         <tr className="bg-[#FCFCFD] border-b border-[#F1F5F9]">
                           <th className="px-5 py-3 text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider">Credor / Vencimento</th>
@@ -641,15 +670,51 @@ export default function App() {
                             </td>
                           </tr>
                         ))}
-                        {debts.filter(d => d.status !== 'paid' && d.status !== 'on_hold').length === 0 && (
-                          <tr>
-                            <td colSpan={3} className="px-5 py-12 text-center text-[#94A3B8] font-medium text-xs italic">
-                              Não há pagamentos pendentes selecionados.
-                            </td>
-                          </tr>
-                        )}
                       </tbody>
                     </table>
+
+                    {/* Mobile Card List */}
+                    <div className="md:hidden divide-y divide-[#F1F5F9]">
+                      {debts.filter(d => d.status !== 'paid' && d.status !== 'on_hold').sort((a,b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()).slice(0, 15).map((debt) => (
+                        <div key={debt.id} className="p-4 space-y-3">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="font-bold text-[#1E293B] text-sm">{debt.creditor}</p>
+                              <p className="text-[10px] text-[#2563EB] font-black uppercase">
+                                {new Date(debt.dueDate).toLocaleDateString('pt-BR')}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-black text-[#DC2626] font-mono">{formatCurrency(debt.remainingAmount)}</p>
+                              <span className="text-[8px] font-bold text-[#CBD5E1] uppercase tracking-tighter italic">Pendente</span>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <select 
+                              id={`dash-pay-account-mobile-${debt.id}`}
+                              className="flex-1 text-[10px] font-black bg-[#F1F5F9] border border-[#E2E8F0] p-2.5 rounded-xl outline-none"
+                            >
+                              {bankAccounts.map(ba => ba && <option key={ba.id} value={ba.id}>{ba.name}</option>)}
+                            </select>
+                            <button
+                              onClick={() => {
+                                const select = document.getElementById(`dash-pay-account-mobile-${debt.id}`) as HTMLSelectElement;
+                                registerPayment(debt.id, debt.remainingAmount || 0, select?.value);
+                              }}
+                              className="bg-[#2563EB] text-white px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider"
+                            >
+                              Pagar
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {debts.filter(d => d.status !== 'paid' && d.status !== 'on_hold').length === 0 && (
+                      <div className="px-5 py-12 text-center text-[#94A3B8] font-medium text-xs italic">
+                        Não há pagamentos pendentes selecionados.
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -815,7 +880,7 @@ export default function App() {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
                 {bankAccounts.map((account, idx) => (
                   <div key={account.id} className="bg-white rounded-xl border border-[#E2E8F0] shadow-md overflow-hidden p-6 relative">
                     <div className="flex justify-between items-start mb-6">
@@ -872,7 +937,7 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
                 {cards.map(card => {
                   const cardDebts = debts.filter(d => d.creditor.includes(card.name) && d.status !== 'paid');
                   const invoiceTotal = cardDebts.reduce((acc, d) => acc + d.remainingAmount, 0);
@@ -1035,7 +1100,8 @@ export default function App() {
               )}
 
               <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-sm overflow-hidden">
-                <table className="w-full text-left">
+                {/* Desktop Table */}
+                <table className="w-full text-left hidden md:table">
                   <thead className="bg-[#FCFCFD] border-b border-[#F1F5F9]">
                     <tr>
                       <th className="px-6 py-3 text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider">Info</th>
@@ -1090,6 +1156,43 @@ export default function App() {
                     ))}
                   </tbody>
                 </table>
+
+                {/* Mobile List View */}
+                <div className="md:hidden divide-y divide-[#F1F5F9]">
+                  {transactions.map((t) => (
+                    <div key={t.id} className="p-4 space-y-2">
+                       <div className="flex justify-between items-start">
+                        <div className="flex-1 min-w-0 pr-4">
+                          <input 
+                            className="font-bold text-sm bg-transparent outline-none focus:text-[#2563EB] w-full truncate"
+                            value={t.description}
+                            onChange={(e) => updateTransaction(t.id, { description: e.target.value })}
+                          />
+                          <div className="flex items-center gap-2 mt-1">
+                            <input 
+                              type="date"
+                              className="text-[9px] text-[#94A3B8] font-black uppercase bg-transparent"
+                              value={t.date}
+                              onChange={(e) => updateTransaction(t.id, { date: e.target.value })}
+                            />
+                            <span className="text-[9px] text-[#94A3B8] font-black uppercase">{t.category}</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="flex items-center justify-end">
+                            <span className={`font-black text-sm ${t.type === 'income' ? 'text-[#16A34A]' : 'text-[#DC2626]'}`}>
+                              {t.type === 'income' ? '+' : '-'} {formatCurrency(t.amount)}
+                            </span>
+                          </div>
+                          <button onClick={() => deleteTransaction(t.id)} className="text-[10px] font-bold text-[#DC2626] uppercase mt-1">Excluir</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {transactions.length === 0 && (
+                     <div className="p-8 text-center text-[#94A3B8] text-xs italic">Nenhuma transação encontrada.</div>
+                  )}
+                </div>
               </div>
             </motion.div>
           )}
@@ -1250,17 +1353,17 @@ export default function App() {
                         </div>
 
                         {/* Actions Row */}
-                        <div className="flex flex-wrap items-center justify-between gap-4 pt-6 border-t border-[#F1F5F9]">
-                          <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-6 border-t border-[#F1F5F9]">
+                          <div className="flex flex-wrap gap-2 items-center">
                             {!isEditing ? (
                               <button 
                                 onClick={() => setEditingDebtId(debt.id)}
-                                className="flex items-center gap-2 bg-[#F1F5F9] text-[#1E293B] px-4 py-2 rounded-xl text-xs font-black uppercase hover:bg-[#E2E8F0] transition-all"
+                                className="flex items-center gap-2 bg-[#F1F5F9] text-[#1E293B] px-4 py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-[#E2E8F0] transition-all"
                               >
-                                Editar Lançamento
+                                Editar
                               </button>
                             ) : (
-                              <div className="flex gap-2">
+                              <div className="flex gap-2 w-full sm:w-auto">
                                 <button 
                                   onClick={() => {
                                     const creditor = (document.getElementById(`edit-creditor-${debt.id}`) as HTMLInputElement).value;
@@ -1287,13 +1390,13 @@ export default function App() {
                                     }
                                     setEditingDebtId(null);
                                   }}
-                                  className="bg-[#16A34A] text-white px-6 py-2 rounded-xl text-xs font-black uppercase shadow-lg shadow-green-200 hover:bg-[#15803D]"
+                                  className="flex-1 sm:flex-none bg-[#16A34A] text-white px-6 py-2.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-green-200 hover:bg-[#15803D]"
                                 >
                                   Salvar
                                 </button>
                                 <button 
                                   onClick={() => setEditingDebtId(null)}
-                                  className="bg-white border border-[#E2E8F0] text-[#64748B] px-6 py-2 rounded-xl text-xs font-black uppercase"
+                                  className="flex-1 sm:flex-none bg-white border border-[#E2E8F0] text-[#64748B] px-6 py-2.5 rounded-xl text-[10px] font-black uppercase"
                                 >
                                   Cancelar
                                 </button>
@@ -1316,7 +1419,7 @@ export default function App() {
                                   }
                                 }
                               }} 
-                              className="p-2 text-[#94A3B8] hover:text-[#DC2626] transition-colors"
+                              className="p-2.5 text-[#94A3B8] hover:text-[#DC2626] transition-colors"
                             >
                               <Trash2 className="w-5 h-5" />
                             </button>
@@ -1324,7 +1427,7 @@ export default function App() {
                             {(debt.installmentInfo || debt.recurringGroupId) && (
                               <button 
                                 onClick={() => deleteSeries(debt.installmentInfo?.groupId || debt.recurringGroupId!)}
-                                className="text-[10px] font-black text-[#94A3B8] border border-[#E2E8F0] px-3 py-1 underline rounded-lg hover:bg-[#FEF2F2] hover:text-[#DC2626] transition-all"
+                                className="text-[9px] font-black text-[#94A3B8] border border-[#E2E8F0] px-3 py-1.5 underline rounded-lg hover:bg-[#FEF2F2] hover:text-[#DC2626] transition-all"
                               >
                                 Limpar Série
                               </button>
@@ -1333,9 +1436,9 @@ export default function App() {
                             {!isEditing && debt.status !== 'paid' && (
                               <button 
                                 onClick={() => updateDebt(debt.id, { status: 'on_hold' })}
-                                className="text-[10px] font-black text-[#F59E0B] border border-[#FEF3C7] px-3 py-1 rounded-lg hover:bg-[#FFFBEB]"
+                                className="text-[9px] font-black text-[#F59E0B] border border-[#FEF3C7] px-3 py-1.5 rounded-lg hover:bg-[#FFFBEB]"
                               >
-                                Colocar em Espera
+                                Espera
                               </button>
                             )}
 
@@ -1347,18 +1450,18 @@ export default function App() {
                                     updateDebt(debt.id, { isCancelled: true });
                                   }
                                 }}
-                                className="text-[10px] font-black text-[#E11D48] border border-dashed border-[#FECDD3] px-3 py-1 rounded-lg hover:bg-[#FFF1F2]"
+                                className="text-[9px] font-black text-[#E11D48] border border-dashed border-[#FECDD3] px-3 py-1.5 rounded-lg hover:bg-[#FFF1F2]"
                               >
-                                Finalizar Recorrência
+                                Finalizar
                               </button>
                             )}
                           </div>
 
                           {debt.status !== 'paid' && !isEditing && (
-                            <div className="flex items-center gap-2 bg-[#F8FAFC] p-1.5 rounded-2xl border border-[#F1F5F9]">
+                            <div className="flex items-center gap-2 bg-[#F8FAFC] p-2 rounded-2xl border border-[#F1F5F9] w-full sm:w-auto">
                               <select 
                                 id={`manage-pay-account-${debt.id}`}
-                                className="bg-transparent text-[10px] font-black uppercase outline-none px-2"
+                                className="bg-transparent text-[10px] font-black uppercase outline-none px-1 flex-1 sm:flex-none"
                               >
                                 {bankAccounts.map(ba => <option key={ba.id} value={ba.id}>{ba.name}</option>)}
                               </select>
@@ -1366,7 +1469,7 @@ export default function App() {
                                 id={`manage-pay-input-${debt.id}`}
                                 type="number"
                                 defaultValue={debt.remainingAmount}
-                                className="w-20 bg-white border border-[#E2E8F0] px-3 py-1.5 rounded-xl text-xs font-black text-[#2563EB] outline-none"
+                                className="w-20 bg-white border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-black text-[#2563EB] outline-none"
                               />
                               <button
                                 onClick={() => {
@@ -1377,7 +1480,7 @@ export default function App() {
                                     registerPayment(debt.id, val, select.value);
                                   }
                                 }}
-                                className="bg-[#1E293B] text-white px-5 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-black transition-all"
+                                className="bg-[#1E293B] text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-black transition-all"
                               >
                                 Pagar
                               </button>

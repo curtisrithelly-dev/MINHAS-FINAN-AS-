@@ -4,7 +4,27 @@
   --font-sans: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
-body {
-  background-color: #f8fafc;
-  color: #1e293b;
+@layer base {
+  body {
+    @apply bg-[#F8FAFC] text-[#1E293B] antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Improve scrollbar for mobile feel */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-[#CBD5E1] rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-[#94A3B8];
+  }
 }
