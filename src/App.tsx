@@ -141,18 +141,24 @@ export default function App() {
     const card = cards.find(c => c.id === cardId);
     if (!card) return;
 
-    const purchaseDate = new Date(dateString);
-    const purchaseDay = purchaseDate.getDate();
+    const [pYear, pMonth, pDay] = dateString.split('-').map(Number);
     
-    let targetDate = new Date(purchaseDate);
-    if (purchaseDay > card.closingDay) {
-      targetDate.setMonth(targetDate.getMonth() + 1);
+    let tYear = pYear;
+    let tMonth = pMonth - 1; // 0-indexed para Date
+    
+    if (pDay > card.closingDay) {
+      tMonth++;
     }
-    targetDate.setDate(card.dueDay);
+    
+    const targetDate = new Date(tYear, tMonth, card.dueDay);
     
     const monthYearLabel = targetDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
     const creditorName = `Fatura: ${card.name} (${monthYearLabel})`;
-    const dueDateString = targetDate.toISOString().split('T')[0];
+    
+    const y = targetDate.getFullYear();
+    const mm = String(targetDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(targetDate.getDate()).padStart(2, '0');
+    const dueDateString = `${y}-${mm}-${dd}`;
 
     const existingDebtIndex = debts.findIndex(d => d.creditor === creditorName && d.status !== 'paid');
 
@@ -186,15 +192,14 @@ export default function App() {
       const installmentAmount = Number((d.totalAmount / installments).toFixed(2));
       
       for (let i = 1; i <= installments; i++) {
-        const dueDate = new Date(d.dueDate);
-        dueDate.setMonth(dueDate.getMonth() + (i - 1));
+        const dueDate = getNextMonthDate(d.dueDate, i - 1);
         
         newDebts.push({
           ...d,
           id: crypto.randomUUID(),
           totalAmount: installmentAmount,
           remainingAmount: installmentAmount,
-          dueDate: dueDate.toISOString().split('T')[0],
+          dueDate: dueDate,
           status: 'pending',
           payments: [],
           installmentInfo: {
@@ -207,12 +212,12 @@ export default function App() {
     } else if (d.type === 'fixed') {
       const recurringGroupId = crypto.randomUUID();
       for (let i = 0; i < 12; i++) {
-        const dueDate = new Date(d.dueDate);
-        dueDate.setMonth(dueDate.getMonth() + i);
+        const dueDate = getNextMonthDate(d.dueDate, i);
         newDebts.push({
           ...d,
           id: crypto.randomUUID(),
           remainingAmount: d.totalAmount,
+          dueDate: dueDate,
           status: 'pending',
           payments: [],
           recurringGroupId
@@ -286,11 +291,11 @@ export default function App() {
         setDebts(debts.filter(d => d.id !== id));
         return;
       }
-      const targetDate = new Date(target.dueDate);
+      const targetDate = target.dueDate;
       setDebts(debts.filter(d => {
         const dGid = d.installmentInfo?.groupId || d.recurringGroupId;
         if (dGid !== gid) return true;
-        const dDateValue = d.dueDate ? new Date(d.dueDate) : new Date(0);
+        const dDateValue = d.dueDate || '';
         if (keepCurrent) {
           return dDateValue <= targetDate; // Keep current, remove future
         }
@@ -313,10 +318,10 @@ export default function App() {
 
     if (applyToFuture && (target.installmentInfo || target.recurringGroupId)) {
       const gid = target.installmentInfo?.groupId || target.recurringGroupId;
-      const targetDate = new Date(target.dueDate);
+      const targetDate = target.dueDate;
       setDebts(debts.map(d => {
         const dGid = d.installmentInfo?.groupId || d.recurringGroupId;
-        if (dGid === gid && new Date(d.dueDate) >= targetDate) {
+        if (dGid === gid && (d.dueDate || '') >= targetDate) {
           return { ...d, ...updates };
         }
         return d;
@@ -388,6 +393,30 @@ export default function App() {
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  };
+
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return `${day.toString().padStart(2, '0')}/${month.toString().padStart(2, '0')}/${year}`;
+  };
+
+  const getNextMonthDate = (dateStr: string, monthsToAdd: number): string => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const d = new Date(year, month - 1 + monthsToAdd, day);
+    
+    // Validar se o mês transbordou (ex: 31 de janeiro + 1 mês = 3 de março)
+    const expectedMonth = (month - 1 + monthsToAdd) % 12;
+    const normalizedExpectedMonth = expectedMonth < 0 ? expectedMonth + 12 : expectedMonth;
+    
+    if (d.getMonth() !== normalizedExpectedMonth) {
+      d.setDate(0); // Retrocede para o último dia do mês pretendido
+    }
+    
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dayStr = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dayStr}`;
   };
 
   return (
@@ -625,7 +654,7 @@ export default function App() {
                             <td className="px-5 py-3.5">
                               <p className="font-bold text-[#1E293B] text-sm">{debt.creditor}</p>
                               <p className="text-[10px] text-[#2563EB] font-black uppercase tracking-tighter">
-                                {new Date(debt.dueDate).toLocaleDateString('pt-BR')}
+                                {formatDate(debt.dueDate)}
                               </p>
                             </td>
                             <td className="px-5 py-3.5 text-right">
@@ -681,7 +710,7 @@ export default function App() {
                             <div>
                               <p className="font-bold text-[#1E293B] text-sm">{debt.creditor}</p>
                               <p className="text-[10px] text-[#2563EB] font-black uppercase">
-                                {new Date(debt.dueDate).toLocaleDateString('pt-BR')}
+                                {formatDate(debt.dueDate)}
                               </p>
                             </div>
                             <div className="text-right">
@@ -1314,7 +1343,7 @@ export default function App() {
                                     defaultValue={debt.dueDate || ''}
                                   />
                                 ) : (
-                                  <p className="text-sm font-bold text-[#1E293B]">{debt.dueDate ? new Date(debt.dueDate).toLocaleDateString('pt-BR') : 'Sem data'}</p>
+                                  <p className="text-sm font-bold text-[#1E293B]">{debt.dueDate ? formatDate(debt.dueDate) : 'Sem data'}</p>
                                 )}
                               </div>
                               <div className="flex flex-col">
