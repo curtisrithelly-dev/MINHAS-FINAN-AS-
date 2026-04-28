@@ -1,37 +1,35 @@
-import { useState, useEffect, useMemo, useCallback, ChangeEvent } from 'react';
-import { PlusCircle, Wallet, ArrowUpCircle, ArrowDownCircle, CreditCard as CreditCardIcon, History, CheckCircle2, AlertCircle, Trash2, LogIn, LogOut, User, Download, Upload } from 'lucide-react';
+import { useState, useEffect, useMemo, ChangeEvent } from 'react';
+import { PlusCircle, Wallet, ArrowUpCircle, ArrowDownCircle, CreditCard as CreditCardIcon, History, Trash2, Download, Upload } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Transaction, Debt, CreditCard, BankAccount, DebtPayment } from './types';
-import { auth, db, handleFirestoreError } from './firebase';
-import { 
-  collection, 
-  onSnapshot, 
-  doc, 
-  setDoc, 
-  deleteDoc, 
-  updateDoc, 
-  query, 
-  where, 
-  orderBy, 
-  addDoc,
-  runTransaction,
-  writeBatch
-} from 'firebase/firestore';
-import { 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  onAuthStateChanged, 
-  signOut,
-  User as FirebaseUser
-} from 'firebase/auth';
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-  const [authReady, setAuthReady] = useState(false);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [debts, setDebts] = useState<Debt[]>([]);
-  const [cards, setCards] = useState<CreditCard[]>([]);
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  // Initialize state from localStorage
+  const [transactions, setTransactions] = useState<Transaction[]>(() => {
+    const saved = localStorage.getItem('transactions');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [debts, setDebts] = useState<Debt[]>(() => {
+    const saved = localStorage.getItem('debts');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [cards, setCards] = useState<CreditCard[]>(() => {
+    const saved = localStorage.getItem('cards');
+    if (saved) return JSON.parse(saved);
+    return [
+      { id: 'cc-1', name: 'Sicoob', limit: 1600, closingDay: 1, dueDay: 11, color: '#16A34A' },
+      { id: 'cc-2', name: 'Mercado Pago', limit: 500, closingDay: 5, dueDay: 10, color: '#2563EB' },
+      { id: 'cc-3', name: 'Nubank', limit: 200, closingDay: 12, dueDay: 20, color: '#9333EA' }
+    ];
+  });
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>(() => {
+    const saved = localStorage.getItem('bankAccounts');
+    if (saved) return JSON.parse(saved);
+    return [
+      { id: 'ba-1', name: 'Mercado Pago', balance: 3400.65, color: '#2563EB' },
+      { id: 'ba-3', name: 'Nubank', balance: 0, color: '#9333EA' }
+    ];
+  });
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'debts' | 'cards' | 'accounts' | 'negotiations'>('dashboard');
   const [isAddingTransaction, setIsAddingTransaction] = useState(false);
@@ -41,91 +39,22 @@ export default function App() {
   const [showCardManager, setShowCardManager] = useState(false);
   const [editingDebtId, setEditingDebtId] = useState<string | null>(null);
 
-  // Auth Handling
+  // Sync to localStorage
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-      setAuthReady(true);
-    });
-    return () => unsubscribe();
-  }, []);
+    localStorage.setItem('transactions', JSON.stringify(transactions));
+  }, [transactions]);
 
-  const loginWithGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      handleFirestoreError(error, 'write', 'auth');
-    }
-  };
-
-  const logout = () => signOut(auth);
-
-  // Firestore Sync - Data scoped to current user
   useEffect(() => {
-    if (!currentUser) {
-      setTransactions([]);
-      setDebts([]);
-      setCards([]);
-      setBankAccounts([]);
-      return;
-    }
+    localStorage.setItem('debts', JSON.stringify(debts));
+  }, [debts]);
 
-    const qTransactions = query(collection(db, `users/${currentUser.uid}/transactions`), orderBy('date', 'desc'));
-    const qDebts = query(collection(db, `users/${currentUser.uid}/debts`));
-    const qCards = query(collection(db, `users/${currentUser.uid}/cards`));
-    const qBankAccounts = query(collection(db, `users/${currentUser.uid}/bankAccounts`));
+  useEffect(() => {
+    localStorage.setItem('cards', JSON.stringify(cards));
+  }, [cards]);
 
-    const unsubTransactions = onSnapshot(qTransactions, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
-      setTransactions(data);
-    });
-
-    const unsubDebts = onSnapshot(qDebts, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Debt));
-      setDebts(data);
-    });
-
-    const unsubCards = onSnapshot(qCards, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CreditCard));
-      if (data.length === 0) {
-        // Initialize default cards
-        const defaults = [
-          { id: 'cc-1', name: 'Sicoob', limit: 1600, closingDay: 1, dueDay: 11, color: '#16A34A' },
-          { id: 'cc-2', name: 'Mercado Pago', limit: 500, closingDay: 5, dueDay: 10, color: '#2563EB' },
-          { id: 'cc-3', name: 'Nubank', limit: 200, closingDay: 12, dueDay: 20, color: '#9333EA' }
-        ];
-        defaults.forEach(d => {
-          const { id, ...rest } = d;
-          setDoc(doc(db, `users/${currentUser.uid}/cards`, id), rest);
-        });
-      }
-      setCards(data);
-    });
-
-    const unsubBankAccounts = onSnapshot(qBankAccounts, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount));
-      if (data.length === 0) {
-        // Initialize default accounts
-        const defaults = [
-          { id: 'ba-1', name: 'Mercado Pago', balance: 3400.65, color: '#2563EB' },
-          { id: 'ba-3', name: 'Nubank', balance: 0, color: '#9333EA' }
-        ];
-        defaults.forEach(d => {
-          const { id, ...rest } = d;
-          setDoc(doc(db, `users/${currentUser.uid}/bankAccounts`, id), rest);
-        });
-      }
-      setBankAccounts(data);
-    });
-
-    return () => {
-      unsubTransactions();
-      unsubDebts();
-      unsubCards();
-      unsubBankAccounts();
-    };
-  }, [currentUser]);
+  useEffect(() => {
+    localStorage.setItem('bankAccounts', JSON.stringify(bankAccounts));
+  }, [bankAccounts]);
 
   // Calculations
   const metrics = useMemo(() => {
@@ -137,8 +66,9 @@ export default function App() {
   }, [bankAccounts, debts]);
 
   // Handlers
-  const addTransaction = async (t: Omit<Transaction, 'id'>, cardId?: string, bankAccountId?: string) => {
-    if (!currentUser) return;
+  const addTransaction = (t: Omit<Transaction, 'id'>, cardId?: string, bankAccountId?: string) => {
+    const id = crypto.randomUUID();
+    const newTransaction: Transaction = { id, ...t, bankAccountId };
 
     // 1. Limit validation for Credit Cards
     if (cardId && t.type === 'expense') {
@@ -152,10 +82,11 @@ export default function App() {
           alert(`Limite insuficiente no cartão ${card.name}! Disponível: ${formatCurrency(available)}`);
           return;
         }
+        handleCardInvoiceAutoDebt(t.amount, t.date, cardId);
       }
     }
 
-    // 2. Balance updates for Bank Accounts (Debit/Pix/Income)
+    // 2. Balance updates for Bank Accounts
     if (bankAccountId) {
       const account = bankAccounts.find(ba => ba.id === bankAccountId);
       if (account) {
@@ -163,76 +94,50 @@ export default function App() {
           alert(`Saldo insuficiente na conta ${account.name}!`);
           return;
         }
-        
-        try {
-          const newBalance = t.type === 'income' ? account.balance + t.amount : account.balance - t.amount;
-          await updateDoc(doc(db, `users/${currentUser.uid}/bankAccounts`, bankAccountId), {
-            balance: Number(newBalance.toFixed(2))
-          });
-        } catch (error) {
-          handleFirestoreError(error, 'update', 'bankAccounts');
-        }
+        const newBalance = t.type === 'income' ? account.balance + t.amount : account.balance - t.amount;
+        setBankAccounts(bankAccounts.map(ba => ba.id === bankAccountId ? { ...ba, balance: Number(newBalance.toFixed(2)) } : ba));
       }
     }
 
-    // 3. Register transaction
-    try {
-      await addDoc(collection(db, `users/${currentUser.uid}/transactions`), { ...t, bankAccountId });
-    } catch (error) {
-      handleFirestoreError(error, 'create', 'transactions');
-    }
-    
-    // 4. Handle Credit Card specific logic (Smart Invoice)
-    if (cardId && t.type === 'expense') {
-      handleCardInvoiceAutoDebt(t.amount, t.date, cardId);
-    }
-    
+    setTransactions([newTransaction, ...transactions]);
     setIsAddingTransaction(false);
   };
 
-  const transferFunds = async (fromId: string, toId: string, amount: number) => {
-    if (!currentUser) return;
+  const transferFunds = (fromId: string, toId: string, amount: number) => {
     const fromAccount = bankAccounts.find(ba => ba.id === fromId);
     if (!fromAccount || fromAccount.balance < amount) {
       alert('Saldo insuficiente para transferência!');
       return;
     }
 
-    try {
-      const batch = writeBatch(db);
-      const toAccount = bankAccounts.find(ba => ba.id === toId);
-      
-      batch.update(doc(db, `users/${currentUser.uid}/bankAccounts`, fromId), { balance: Number((fromAccount.balance - amount).toFixed(2)) });
-      batch.update(doc(db, `users/${currentUser.uid}/bankAccounts`, toId), { balance: Number(((toAccount?.balance || 0) + amount).toFixed(2)) });
-      
-      await batch.commit();
+    const toAccount = bankAccounts.find(ba => ba.id === toId);
+    setBankAccounts(bankAccounts.map(ba => {
+      if (ba.id === fromId) return { ...ba, balance: Number((ba.balance - amount).toFixed(2)) };
+      if (ba.id === toId) return { ...ba, balance: Number((ba.balance + amount).toFixed(2)) };
+      return ba;
+    }));
 
-      // Log the transfer
-      const date = new Date().toISOString().split('T')[0];
-      addTransaction({
-        description: `Transferência enviada para ${bankAccounts.find(b => b.id === toId)?.name}`,
-        amount,
-        type: 'expense',
-        category: 'Transferência',
-        date
-      }, undefined, fromId);
+    const date = new Date().toISOString().split('T')[0];
+    addTransaction({
+      description: `Transferência enviada para ${toAccount?.name}`,
+      amount,
+      type: 'expense',
+      category: 'Transferência',
+      date
+    }, undefined, fromId);
 
-      addTransaction({
-        description: `Transferência recebida de ${fromAccount.name}`,
-        amount,
-        type: 'income',
-        category: 'Transferência',
-        date
-      }, undefined, toId);
+    addTransaction({
+      description: `Transferência recebida de ${fromAccount.name}`,
+      amount,
+      type: 'income',
+      category: 'Transferência',
+      date
+    }, undefined, toId);
 
-      setIsTransferring(false);
-    } catch (error) {
-      handleFirestoreError(error, 'write', 'transfer');
-    }
+    setIsTransferring(false);
   };
 
-  const handleCardInvoiceAutoDebt = async (amount: number, dateString: string, cardId: string) => {
-    if (!currentUser) return;
+  const handleCardInvoiceAutoDebt = (amount: number, dateString: string, cardId: string) => {
     const card = cards.find(c => c.id === cardId);
     if (!card) return;
 
@@ -249,36 +154,32 @@ export default function App() {
     const creditorName = `Fatura: ${card.name} (${monthYearLabel})`;
     const dueDateString = targetDate.toISOString().split('T')[0];
 
-    const existingDebt = debts.find(d => d.creditor === creditorName && d.status !== 'paid');
+    const existingDebtIndex = debts.findIndex(d => d.creditor === creditorName && d.status !== 'paid');
 
-    if (existingDebt) {
-      try {
-        await updateDoc(doc(db, `users/${currentUser.uid}/debts`, existingDebt.id), {
-          totalAmount: Number((existingDebt.totalAmount + amount).toFixed(2)),
-          remainingAmount: Number((existingDebt.remainingAmount + amount).toFixed(2))
-        });
-      } catch (error) {
-        handleFirestoreError(error, 'update', 'debts');
-      }
+    if (existingDebtIndex >= 0) {
+      const updatedDebts = [...debts];
+      updatedDebts[existingDebtIndex] = {
+        ...updatedDebts[existingDebtIndex],
+        totalAmount: Number((updatedDebts[existingDebtIndex].totalAmount + amount).toFixed(2)),
+        remainingAmount: Number((updatedDebts[existingDebtIndex].remainingAmount + amount).toFixed(2))
+      };
+      setDebts(updatedDebts);
     } else {
-      try {
-        await addDoc(collection(db, `users/${currentUser.uid}/debts`), {
-          creditor: creditorName,
-          totalAmount: amount,
-          remainingAmount: amount,
-          dueDate: dueDateString,
-          status: 'pending',
-          payments: []
-        });
-      } catch (error) {
-        handleFirestoreError(error, 'create', 'debts');
-      }
+      const newDebt: Debt = {
+        id: crypto.randomUUID(),
+        creditor: creditorName,
+        totalAmount: amount,
+        remainingAmount: amount,
+        dueDate: dueDateString,
+        status: 'pending',
+        payments: []
+      };
+      setDebts([...debts, newDebt]);
     }
   };
 
-  const addDebt = async (d: Omit<Debt, 'id' | 'remainingAmount' | 'status' | 'payments'>, installments: number = 1) => {
-    if (!currentUser) return;
-    const batch = writeBatch(db);
+  const addDebt = (d: Omit<Debt, 'id' | 'remainingAmount' | 'status' | 'payments'>, installments: number = 1) => {
+    let newDebts: Debt[] = [];
     
     if (d.type === 'installments' && installments > 1) {
       const groupId = crypto.randomUUID();
@@ -288,9 +189,9 @@ export default function App() {
         const dueDate = new Date(d.dueDate);
         dueDate.setMonth(dueDate.getMonth() + (i - 1));
         
-        const docRef = doc(collection(db, `users/${currentUser.uid}/debts`));
-        batch.set(docRef, {
+        newDebts.push({
           ...d,
+          id: crypto.randomUUID(),
           totalAmount: installmentAmount,
           remainingAmount: installmentAmount,
           dueDate: dueDate.toISOString().split('T')[0],
@@ -308,9 +209,9 @@ export default function App() {
       for (let i = 0; i < 12; i++) {
         const dueDate = new Date(d.dueDate);
         dueDate.setMonth(dueDate.getMonth() + i);
-        const docRef = doc(collection(db, `users/${currentUser.uid}/debts`));
-        batch.set(docRef, {
+        newDebts.push({
           ...d,
+          id: crypto.randomUUID(),
           remainingAmount: d.totalAmount,
           status: 'pending',
           payments: [],
@@ -318,25 +219,21 @@ export default function App() {
         });
       }
     } else {
-      const docRef = doc(collection(db, `users/${currentUser.uid}/debts`));
-      batch.set(docRef, {
+      newDebts.push({
         ...d,
+        id: crypto.randomUUID(),
         remainingAmount: d.totalAmount,
         status: 'pending',
         payments: []
       });
     }
     
-    try {
-      await batch.commit();
-    } catch (error) {
-      handleFirestoreError(error, 'write', 'debts-batch');
-    }
+    setDebts([...debts, ...newDebts]);
     setIsAddingDebt(false);
   };
 
-  const registerPayment = async (debtId: string, amount: number, bankAccountId?: string) => {
-    if (!currentUser || !bankAccountId) {
+  const registerPayment = (debtId: string, amount: number, bankAccountId?: string) => {
+    if (!bankAccountId) {
       alert('Selecione uma conta para realizar o pagamento.');
       return;
     }
@@ -359,171 +256,88 @@ export default function App() {
       bankAccountName: account.name
     };
 
-    try {
-      const remaining = Number((debt.remainingAmount - paymentAmount).toFixed(2));
-      await updateDoc(doc(db, `users/${currentUser.uid}/debts`, debtId), {
-        remainingAmount: remaining,
-        status: remaining <= 0 ? 'paid' : debt.status,
-        payments: [...(debt.payments || []), newPayment]
-      });
+    const remaining = Number((debt.remainingAmount - paymentAmount).toFixed(2));
+    
+    setDebts(debts.map(d => d.id === debtId ? {
+      ...d,
+      remainingAmount: remaining,
+      status: remaining <= 0 ? 'paid' : d.status,
+      payments: [...(d.payments || []), newPayment]
+    } : d));
 
-      addTransaction({
-        amount: paymentAmount,
-        type: 'expense',
-        category: 'Dívida',
-        date: new Date().toISOString().split('T')[0],
-        description: `Pagamento: ${debt.creditor} ${debt.installmentInfo ? `(${debt.installmentInfo.current}/${debt.installmentInfo.total})` : ''}`,
-      }, undefined, bankAccountId);
-    } catch (error) {
-      handleFirestoreError(error, 'update', 'debts-payment');
-    }
+    setBankAccounts(bankAccounts.map(ba => ba.id === bankAccountId ? { ...ba, balance: Number((ba.balance - paymentAmount).toFixed(2)) } : ba));
+
+    addTransaction({
+      amount: paymentAmount,
+      type: 'expense',
+      category: 'Dívida',
+      date: new Date().toISOString().split('T')[0],
+      description: `Pagamento: ${debt.creditor} ${debt.installmentInfo ? `(${debt.installmentInfo.current}/${debt.installmentInfo.total})` : ''}`,
+    }, undefined, bankAccountId);
   };
 
-  const deleteDebt = async (id: string, cascade: boolean = false, keepCurrent: boolean = false) => {
-    if (!currentUser) return;
+  const deleteDebt = (id: string, cascade: boolean = false, keepCurrent: boolean = false) => {
     const target = debts.find(d => d.id === id);
     if (!target) return;
 
     if (cascade && (target.installmentInfo || target.recurringGroupId)) {
       const gid = target.installmentInfo?.groupId || target.recurringGroupId;
       if (!gid) {
-        await deleteDoc(doc(db, `users/${currentUser.uid}/debts`, id));
+        setDebts(debts.filter(d => d.id !== id));
         return;
       }
       const targetDate = new Date(target.dueDate);
-      const toDelete = debts.filter(d => {
+      setDebts(debts.filter(d => {
         const dGid = d.installmentInfo?.groupId || d.recurringGroupId;
-        if (dGid !== gid) return false;
+        if (dGid !== gid) return true;
         const dDateValue = d.dueDate ? new Date(d.dueDate) : new Date(0);
         if (keepCurrent) {
-          return dDateValue > targetDate; // Keep current, remove future
+          return dDateValue <= targetDate; // Keep current, remove future
         }
-        return dDateValue >= targetDate; // Remove current and future
-      });
-
-      try {
-        const batch = writeBatch(db);
-        toDelete.forEach(d => {
-          batch.delete(doc(db, `users/${currentUser.uid}/debts`, d.id));
-        });
-        await batch.commit();
-      } catch (error) {
-        handleFirestoreError(error, 'delete', 'debts-cascade');
-      }
+        return dDateValue < targetDate; // Remove current and future
+      }));
     } else {
-      try {
-        await deleteDoc(doc(db, `users/${currentUser.uid}/debts`, id));
-      } catch (error) {
-        handleFirestoreError(error, 'delete', 'debts');
-      }
+      setDebts(debts.filter(d => d.id !== id));
     }
   };
 
-  const deleteSeries = async (groupId: string) => {
-    if (!currentUser || !groupId) {
-      alert('Esta série não possui um identificador válido.');
-      return;
-    }
+  const deleteSeries = (groupId: string) => {
     if (window.confirm('Tem certeza que deseja apagar toda a série de parcelas? Esta ação é irreversível.')) {
-      const toDelete = debts.filter(d => (d.installmentInfo?.groupId === groupId || d.recurringGroupId === groupId));
-      try {
-        const batch = writeBatch(db);
-        toDelete.forEach(d => {
-          batch.delete(doc(db, `users/${currentUser.uid}/debts`, d.id));
-        });
-        await batch.commit();
-      } catch (error) {
-        handleFirestoreError(error, 'delete', 'debts-series');
-      }
+      setDebts(debts.filter(d => (d.installmentInfo?.groupId !== groupId && d.recurringGroupId !== groupId)));
     }
   };
 
-  const updateDebtSmart = async (id: string, updates: Partial<Debt>, applyToFuture: boolean = false) => {
-    if (!currentUser) return;
+  const updateDebtSmart = (id: string, updates: Partial<Debt>, applyToFuture: boolean = false) => {
     const target = debts.find(d => d.id === id);
     if (!target) return;
 
     if (applyToFuture && (target.installmentInfo || target.recurringGroupId)) {
       const gid = target.installmentInfo?.groupId || target.recurringGroupId;
       const targetDate = new Date(target.dueDate);
-      const toUpdate = debts.filter(d => {
+      setDebts(debts.map(d => {
         const dGid = d.installmentInfo?.groupId || d.recurringGroupId;
-        return (dGid === gid && new Date(d.dueDate) >= targetDate);
-      });
-
-      try {
-        const batch = writeBatch(db);
-        toUpdate.forEach(d => {
-          batch.update(doc(db, `users/${currentUser.uid}/debts`, d.id), updates);
-        });
-        await batch.commit();
-      } catch (error) {
-        handleFirestoreError(error, 'update', 'debts-future');
-      }
+        if (dGid === gid && new Date(d.dueDate) >= targetDate) {
+          return { ...d, ...updates };
+        }
+        return d;
+      }));
     } else {
-      try {
-        await updateDoc(doc(db, `users/${currentUser.uid}/debts`, id), updates);
-      } catch (error) {
-        handleFirestoreError(error, 'update', 'debts');
-      }
+      setDebts(debts.map(d => d.id === id ? { ...d, ...updates } : d));
     }
   };
 
-  const deleteTransaction = async (id: string) => {
-    if (!currentUser) return;
-    try {
-      await deleteDoc(doc(db, `users/${currentUser.uid}/transactions`, id));
-    } catch (error) {
-      handleFirestoreError(error, 'delete', 'transactions');
-    }
-  };
-
-  const updateTransaction = async (id: string, updates: Partial<Transaction>) => {
-    if (!currentUser) return;
-    try {
-      await updateDoc(doc(db, `users/${currentUser.uid}/transactions`, id), updates);
-    } catch (error) {
-      handleFirestoreError(error, 'update', 'transactions');
-    }
-  };
-
-  const updateDebt = async (id: string, updates: Partial<Debt>) => {
-    if (!currentUser) return;
-    try {
-      await updateDoc(doc(db, `users/${currentUser.uid}/debts`, id), updates);
-    } catch (error) {
-      handleFirestoreError(error, 'update', 'debts');
-    }
-  };
-
-  const updateBankAccount = async (id: string, updates: Partial<BankAccount>) => {
-    if (!currentUser) return;
-    try {
-      await updateDoc(doc(db, `users/${currentUser.uid}/bankAccounts`, id), updates);
-    } catch (error) {
-      handleFirestoreError(error, 'update', 'bankAccounts');
-    }
-  };
-
-  const deleteBankAccount = async (id: string) => {
-    if (!currentUser) return;
+  const deleteTransaction = (id: string) => setTransactions(transactions.filter(t => t.id !== id));
+  const updateTransaction = (id: string, updates: Partial<Transaction>) => setTransactions(transactions.map(t => t.id === id ? { ...t, ...updates } : t));
+  const updateDebt = (id: string, updates: Partial<Debt>) => setDebts(debts.map(d => d.id === id ? { ...d, ...updates } : d));
+  const updateBankAccount = (id: string, updates: Partial<BankAccount>) => setBankAccounts(bankAccounts.map(ba => ba.id === id ? { ...ba, ...updates } : ba));
+  
+  const deleteBankAccount = (id: string) => {
     if (window.confirm('Tem certeza que deseja excluir esta conta?')) {
-      try {
-        await deleteDoc(doc(db, `users/${currentUser.uid}/bankAccounts`, id));
-      } catch (error) {
-        handleFirestoreError(error, 'delete', 'bankAccounts');
-      }
+      setBankAccounts(bankAccounts.filter(ba => ba.id !== id));
     }
   };
 
-  const updateCard = async (id: string, updates: Partial<CreditCard>) => {
-    if (!currentUser) return;
-    try {
-      await updateDoc(doc(db, `users/${currentUser.uid}/cards`, id), updates);
-    } catch (error) {
-      handleFirestoreError(error, 'update', 'cards');
-    }
-  };
+  const updateCard = (id: string, updates: Partial<CreditCard>) => setCards(cards.map(c => c.id === id ? { ...c, ...updates } : c));
 
   const exportBackup = () => {
     const backupData = {
@@ -534,7 +348,6 @@ export default function App() {
       exportDate: new Date().toISOString(),
       version: '1.0'
     };
-    
     const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -546,54 +359,25 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  const importBackup = async (event: ChangeEvent<HTMLInputElement>) => {
+  const importBackup = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file || !currentUser) return;
+    if (!file) return;
 
     if (!window.confirm('Atenção: A restauração de backup irá substituir todos os seus dados atuais. Deseja continuar?')) {
       return;
     }
 
     const reader = new FileReader();
-    reader.onload = async (e) => {
+    reader.onload = (e) => {
       try {
         const data = JSON.parse(e.target?.result as string);
         if (!data.transactions || !data.debts || !data.cards || !data.bankAccounts) {
           throw new Error('Arquivo de backup inválido');
         }
-
-        const batch = writeBatch(db);
-        
-        // Clear and rewrite collections
-        // Note: For large datasets, this might exceed batch limits (500 ops), 
-        // but for personal finance it's usually fine. 
-        // A more robust way would be needed for thousands of items.
-
-        // Update cards
-        data.cards.forEach((item: any) => {
-          const { id, ...rest } = item;
-          batch.set(doc(db, `users/${currentUser.uid}/cards`, id), rest);
-        });
-
-        // Update accounts
-        data.bankAccounts.forEach((item: any) => {
-          const { id, ...rest } = item;
-          batch.set(doc(db, `users/${currentUser.uid}/bankAccounts`, id), rest);
-        });
-
-        // Update debts
-        data.debts.forEach((item: any) => {
-          const { id, ...rest } = item;
-          batch.set(doc(db, `users/${currentUser.uid}/debts`, id), rest);
-        });
-
-        // Update transactions
-        data.transactions.forEach((item: any) => {
-          const { id, ...rest } = item;
-          batch.set(doc(db, `users/${currentUser.uid}/transactions`, id), rest);
-        });
-
-        await batch.commit();
+        setTransactions(data.transactions);
+        setDebts(data.debts);
+        setCards(data.cards);
+        setBankAccounts(data.bankAccounts);
         alert('Backup restaurado com sucesso! Seus dados foram sincronizados.');
       } catch (error) {
         alert('Erro ao processar arquivo de backup: ' + (error as Error).message);
@@ -606,47 +390,6 @@ export default function App() {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
   };
 
-  if (!authReady) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-[#2563EB] border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-[#64748B] font-medium">Sincronizando seus dados...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!currentUser) {
-    return (
-      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center px-4">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white p-10 rounded-3xl shadow-2xl border border-[#E2E8F0] w-full max-w-md text-center"
-        >
-          <div className="w-20 h-20 bg-[#2563EB]/10 rounded-3xl flex items-center justify-center mx-auto mb-8">
-            <Wallet className="w-10 h-10 text-[#2563EB]" />
-          </div>
-          <h1 className="text-3xl font-black text-[#1E293B] mb-3">Finança<span className="text-[#2563EB]"> Curti</span></h1>
-          <p className="text-[#64748B] mb-10 text-lg">Seu controle financeiro avançado com inteligência de parcelamento.</p>
-          
-          <button 
-            onClick={loginWithGoogle}
-            className="w-full bg-white border-2 border-[#E2E8F0] text-[#1E293B] py-4 rounded-2xl font-black flex items-center justify-center gap-3 hover:border-[#2563EB] hover:bg-[#F8FAFC] transition-all transform active:scale-95 shadow-sm group"
-          >
-            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/bootstrap/google.svg" alt="" className="w-6 h-6" />
-            <span className="group-hover:text-[#2563EB]">Acessar com Google</span>
-          </button>
-          
-          <div className="mt-8 pt-8 border-t border-[#F1F5F9] text-[#94A3B8] text-sm">
-            Seus dados são sincronizados em tempo real com segurança total.
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#1E293B] font-sans">
       {/* Header */}
@@ -658,26 +401,22 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            {currentUser && (
-              <div className="flex items-center gap-2 mr-2">
-                <div className="flex items-center gap-2 px-3 py-1 bg-[#F1F5F9] rounded-xl border border-[#E2E8F0]">
-                  <button 
-                    onClick={exportBackup}
-                    className="p-1.5 text-[#64748B] hover:text-[#2563EB] transition-colors"
-                    title="Exportar Backup"
-                  >
-                    <Download className="w-4 h-4" />
-                  </button>
-                  <div className="w-[1px] h-3 bg-[#CBD5E1]"></div>
-                  <label className="p-1.5 text-[#64748B] hover:text-[#2563EB] transition-colors cursor-pointer" title="Importar Backup">
-                    <Upload className="w-4 h-4" />
-                    <input type="file" accept=".json" onChange={importBackup} className="hidden" />
-                  </label>
-                </div>
-                <img src={currentUser.photoURL || ''} alt="" className="w-8 h-8 rounded-full border border-[#E2E8F0]" />
-                <button onClick={logout} className="text-xs font-bold text-[#64748B] hover:text-[#EF4444]">Sair</button>
+            <div className="flex items-center gap-2 mr-2">
+              <div className="flex items-center gap-2 px-3 py-1 bg-[#F1F5F9] rounded-xl border border-[#E2E8F0]">
+                <button 
+                  onClick={exportBackup}
+                  className="p-1.5 text-[#64748B] hover:text-[#2563EB] transition-colors"
+                  title="Exportar Backup"
+                >
+                  <Download className="w-4 h-4" />
+                </button>
+                <div className="w-[1px] h-3 bg-[#CBD5E1]"></div>
+                <label className="p-1.5 text-[#64748B] hover:text-[#2563EB] transition-colors cursor-pointer" title="Importar Backup">
+                  <Upload className="w-4 h-4" />
+                  <input type="file" accept=".json" onChange={importBackup} className="hidden" />
+                </label>
               </div>
-            )}
+            </div>
             <button 
               onClick={() => setShowCardManager(!showCardManager)}
               className="p-2 text-[#64748B] hover:text-[#2563EB] transition-colors"
