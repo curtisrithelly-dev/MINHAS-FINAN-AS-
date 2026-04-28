@@ -34,7 +34,8 @@
         "totalAmount": { "type": "number" },
         "remainingAmount": { "type": "number" },
         "dueDate": { "type": "string" },
-        "status": { "type": "string", "enum": ["pending", "paid", "overdue"] },
+        "status": { "type": "string", "enum": ["pending", "paid", "overdue", "on_hold"] },
+        "notes": { "type": "string" },
         "category": { "type": "string" },
         "type": { "type": "string", "enum": ["fixed", "unique", "installments"] },
         "installmentInfo": {

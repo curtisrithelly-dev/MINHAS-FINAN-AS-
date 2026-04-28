@@ -29,7 +29,8 @@ export interface Debt {
   totalAmount: number;
   remainingAmount: number;
   dueDate: string;
-  status: 'pending' | 'paid' | 'overdue';
+  status: 'pending' | 'paid' | 'overdue' | 'on_hold';
+  notes?: string;
   category?: string;
   type?: 'fixed' | 'unique' | 'installments';
   installmentInfo?: {

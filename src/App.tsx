@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { PlusCircle, Wallet, ArrowUpCircle, ArrowDownCircle, CreditCard as CreditCardIcon, History, CheckCircle2, AlertCircle, Trash2, LogIn, LogOut, User } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback, ChangeEvent } from 'react';
+import { PlusCircle, Wallet, ArrowUpCircle, ArrowDownCircle, CreditCard as CreditCardIcon, History, CheckCircle2, AlertCircle, Trash2, LogIn, LogOut, User, Download, Upload } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Transaction, Debt, CreditCard, BankAccount, DebtPayment } from './types';
 import { auth, db, handleFirestoreError } from './firebase';
@@ -33,7 +33,7 @@ export default function App() {
   const [cards, setCards] = useState<CreditCard[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'debts' | 'cards' | 'accounts'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'debts' | 'cards' | 'accounts' | 'negotiations'>('dashboard');
   const [isAddingTransaction, setIsAddingTransaction] = useState(false);
   const [isAddingIncome, setIsAddingIncome] = useState(false);
   const [isAddingDebt, setIsAddingDebt] = useState(false);
@@ -109,7 +109,6 @@ export default function App() {
         // Initialize default accounts
         const defaults = [
           { id: 'ba-1', name: 'Mercado Pago', balance: 3400.65, color: '#2563EB' },
-          { id: 'ba-2', name: 'Sicoob', balance: 112.00, color: '#16A34A' },
           { id: 'ba-3', name: 'Nubank', balance: 0, color: '#9333EA' }
         ];
         defaults.forEach(d => {
@@ -131,7 +130,9 @@ export default function App() {
   // Calculations
   const metrics = useMemo(() => {
     const totalBankBalance = bankAccounts.reduce((acc, ba) => acc + ba.balance, 0);
-    const totalDebt = debts.reduce((acc, d) => acc + d.remainingAmount, 0);
+    const totalDebt = debts
+      .filter(d => d.status !== 'on_hold')
+      .reduce((acc, d) => acc + d.remainingAmount, 0);
     return { balance: totalBankBalance, totalDebt };
   }, [bankAccounts, debts]);
 
@@ -504,6 +505,17 @@ export default function App() {
     }
   };
 
+  const deleteBankAccount = async (id: string) => {
+    if (!currentUser) return;
+    if (window.confirm('Tem certeza que deseja excluir esta conta?')) {
+      try {
+        await deleteDoc(doc(db, `users/${currentUser.uid}/bankAccounts`, id));
+      } catch (error) {
+        handleFirestoreError(error, 'delete', 'bankAccounts');
+      }
+    }
+  };
+
   const updateCard = async (id: string, updates: Partial<CreditCard>) => {
     if (!currentUser) return;
     try {
@@ -511,6 +523,83 @@ export default function App() {
     } catch (error) {
       handleFirestoreError(error, 'update', 'cards');
     }
+  };
+
+  const exportBackup = () => {
+    const backupData = {
+      transactions,
+      debts,
+      cards,
+      bankAccounts,
+      exportDate: new Date().toISOString(),
+      version: '1.0'
+    };
+    
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `backup_financa_curti_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const importBackup = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !currentUser) return;
+
+    if (!window.confirm('Atenção: A restauração de backup irá substituir todos os seus dados atuais. Deseja continuar?')) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = JSON.parse(e.target?.result as string);
+        if (!data.transactions || !data.debts || !data.cards || !data.bankAccounts) {
+          throw new Error('Arquivo de backup inválido');
+        }
+
+        const batch = writeBatch(db);
+        
+        // Clear and rewrite collections
+        // Note: For large datasets, this might exceed batch limits (500 ops), 
+        // but for personal finance it's usually fine. 
+        // A more robust way would be needed for thousands of items.
+
+        // Update cards
+        data.cards.forEach((item: any) => {
+          const { id, ...rest } = item;
+          batch.set(doc(db, `users/${currentUser.uid}/cards`, id), rest);
+        });
+
+        // Update accounts
+        data.bankAccounts.forEach((item: any) => {
+          const { id, ...rest } = item;
+          batch.set(doc(db, `users/${currentUser.uid}/bankAccounts`, id), rest);
+        });
+
+        // Update debts
+        data.debts.forEach((item: any) => {
+          const { id, ...rest } = item;
+          batch.set(doc(db, `users/${currentUser.uid}/debts`, id), rest);
+        });
+
+        // Update transactions
+        data.transactions.forEach((item: any) => {
+          const { id, ...rest } = item;
+          batch.set(doc(db, `users/${currentUser.uid}/transactions`, id), rest);
+        });
+
+        await batch.commit();
+        alert('Backup restaurado com sucesso! Seus dados foram sincronizados.');
+      } catch (error) {
+        alert('Erro ao processar arquivo de backup: ' + (error as Error).message);
+      }
+    };
+    reader.readAsText(file);
   };
 
   const formatCurrency = (value: number) => {
@@ -539,7 +628,7 @@ export default function App() {
           <div className="w-20 h-20 bg-[#2563EB]/10 rounded-3xl flex items-center justify-center mx-auto mb-8">
             <Wallet className="w-10 h-10 text-[#2563EB]" />
           </div>
-          <h1 className="text-3xl font-black text-[#1E293B] mb-3">Finanza<span className="text-[#2563EB]">Flow</span></h1>
+          <h1 className="text-3xl font-black text-[#1E293B] mb-3">Finança<span className="text-[#2563EB]"> Curti</span></h1>
           <p className="text-[#64748B] mb-10 text-lg">Seu controle financeiro avançado com inteligência de parcelamento.</p>
           
           <button 
@@ -565,12 +654,26 @@ export default function App() {
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="font-bold text-xl tracking-tight text-[#2563EB]">
-              Finanza<span className="text-[#64748B] ml-1">Flow</span>
+              Finança<span className="text-[#64748B] ml-1">Curti</span>
             </div>
           </div>
           <div className="flex items-center gap-4">
             {currentUser && (
               <div className="flex items-center gap-2 mr-2">
+                <div className="flex items-center gap-2 px-3 py-1 bg-[#F1F5F9] rounded-xl border border-[#E2E8F0]">
+                  <button 
+                    onClick={exportBackup}
+                    className="p-1.5 text-[#64748B] hover:text-[#2563EB] transition-colors"
+                    title="Exportar Backup"
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
+                  <div className="w-[1px] h-3 bg-[#CBD5E1]"></div>
+                  <label className="p-1.5 text-[#64748B] hover:text-[#2563EB] transition-colors cursor-pointer" title="Importar Backup">
+                    <Upload className="w-4 h-4" />
+                    <input type="file" accept=".json" onChange={importBackup} className="hidden" />
+                  </label>
+                </div>
                 <img src={currentUser.photoURL || ''} alt="" className="w-8 h-8 rounded-full border border-[#E2E8F0]" />
                 <button onClick={logout} className="text-xs font-bold text-[#64748B] hover:text-[#EF4444]">Sair</button>
               </div>
@@ -583,7 +686,7 @@ export default function App() {
               <CreditCardIcon className="w-5 h-5" />
             </button>
             <nav className="flex gap-1 bg-[#F1F5F9] p-1 rounded-xl">
-              {(['dashboard', 'transactions', 'debts', 'cards', 'accounts'] as const).map((tab) => (
+              {(['dashboard', 'transactions', 'debts', 'negotiations', 'cards', 'accounts'] as const).map((tab) => (
                 <button
                   key={tab}
                   id={`tab-${tab}`}
@@ -592,7 +695,9 @@ export default function App() {
                     activeTab === tab ? 'bg-white text-[#2563EB] shadow-sm' : 'text-[#64748B] hover:text-[#1E293B]'
                   }`}
                 >
-                  {tab === 'accounts' ? 'Bancos' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  {tab === 'accounts' ? 'Bancos' : 
+                   tab === 'negotiations' ? 'Negociações' :
+                   tab.charAt(0).toUpperCase() + tab.slice(1)}
                 </button>
               ))}
             </nav>
@@ -747,7 +852,7 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#F1F5F9]">
-                        {debts.filter(d => d.status !== 'paid').sort((a,b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()).slice(0, 10).map((debt) => (
+                        {debts.filter(d => d.status !== 'paid' && d.status !== 'on_hold').sort((a,b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()).slice(0, 10).map((debt) => (
                           <tr key={debt.id} className="hover:bg-[#F8FAFC] transition-colors group">
                             <td className="px-5 py-3.5">
                               <p className="font-bold text-[#1E293B] text-sm">{debt.creditor}</p>
@@ -797,7 +902,7 @@ export default function App() {
                             </td>
                           </tr>
                         ))}
-                        {debts.filter(d => d.status !== 'paid').length === 0 && (
+                        {debts.filter(d => d.status !== 'paid' && d.status !== 'on_hold').length === 0 && (
                           <tr>
                             <td colSpan={3} className="px-5 py-12 text-center text-[#94A3B8] font-medium text-xs italic">
                               Não há pagamentos pendentes selecionados.
@@ -816,7 +921,15 @@ export default function App() {
                     <div className="space-y-3">
                       {bankAccounts.map(account => (
                         <div key={account.id} className="flex justify-between items-center p-3 rounded-lg bg-[#F8FAFC] border border-[#F1F5F9]">
-                          <p className="text-[11px] font-bold text-[#64748B] uppercase">{account.name}</p>
+                          <div className="flex items-center gap-2">
+                            <button 
+                              onClick={() => deleteBankAccount(account.id)}
+                              className="p-1 text-[#94A3B8] hover:text-[#EF4444] transition-colors"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                            <p className="text-[11px] font-bold text-[#64748B] uppercase">{account.name}</p>
+                          </div>
                           <input 
                             type="number" 
                             step="0.01"
@@ -1310,7 +1423,7 @@ export default function App() {
               )}
 
               <div className="grid grid-cols-1 gap-4">
-                {debts.map((debt) => {
+                {debts.filter(d => d.status !== 'on_hold').map((debt) => {
                   const isEditing = editingDebtId === debt.id;
                   
                   return (
@@ -1339,9 +1452,12 @@ export default function App() {
                                 </span>
                               )}
                               <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-md ${
-                                debt.status === 'paid' ? 'bg-[#DCFCE7] text-[#166534]' : 'bg-[#FEE2E2] text-[#991B1B]'
+                                debt.status === 'paid' ? 'bg-[#DCFCE7] text-[#166534]' : 
+                                debt.status === 'on_hold' ? 'bg-[#FEF3C7] text-[#92400E]' :
+                                'bg-[#FEE2E2] text-[#991B1B]'
                               }`}>
-                                {debt.status === 'paid' ? 'Liquidada' : 'Pendente'}
+                                {debt.status === 'paid' ? 'Liquidada' : 
+                                 debt.status === 'on_hold' ? 'Em Espera' : 'Pendente'}
                               </span>
                             </div>
 
@@ -1475,6 +1591,15 @@ export default function App() {
                               </button>
                             )}
 
+                            {!isEditing && debt.status !== 'paid' && (
+                              <button 
+                                onClick={() => updateDebt(debt.id, { status: 'on_hold' })}
+                                className="text-[10px] font-black text-[#F59E0B] border border-[#FEF3C7] px-3 py-1 rounded-lg hover:bg-[#FFFBEB]"
+                              >
+                                Colocar em Espera
+                              </button>
+                            )}
+
                             {debt.type === 'fixed' && !debt.isCancelled && (
                               <button 
                                 onClick={() => {
@@ -1524,6 +1649,86 @@ export default function App() {
                     </div>
                   );
                 })}
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'negotiations' && (
+            <motion.div
+              key="negotiations"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-6"
+            >
+              <div className="flex flex-col gap-2">
+                <h2 className="text-xl font-bold text-[#1E293B]">Plano de Quitação</h2>
+                <p className="text-sm text-[#64748B]">Dívidas em negociação ou aguardando decisão. Não somam no total mensal.</p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4">
+                {debts.filter(d => d.status === 'on_hold').map((debt) => (
+                  <div key={debt.id} className="bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-sm hover:border-[#F59E0B]/30 transition-all">
+                    <div className="flex flex-col md:flex-row justify-between gap-6">
+                      <div className="flex-1 space-y-4">
+                        <div className="flex items-center gap-3">
+                          <h3 className="font-black text-xl text-[#1E293B] tracking-tight">{debt.creditor}</h3>
+                          <span className="bg-[#FEF3C7] text-[#92400E] text-[10px] font-black uppercase px-2 py-1 rounded-md">Em Espera</span>
+                        </div>
+                        
+                        <div className="flex flex-col gap-2">
+                          <label className="text-[9px] font-black text-[#94A3B8] uppercase tracking-widest">Anotações / Proposta de Acordo</label>
+                          <textarea 
+                            className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-3 rounded-xl text-sm outline-none focus:ring-1 focus:ring-[#F59E0B] min-h-[80px] resize-none"
+                            placeholder="Anote aqui detalhes da negociação, propostas recebidas..."
+                            defaultValue={debt.notes || ''}
+                            onBlur={(e) => updateDebt(debt.id, { notes: e.target.value })}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col md:items-end justify-between gap-4">
+                        <div className="text-right">
+                          <label className="text-[10px] font-black text-[#94A3B8] uppercase tracking-widest block mb-1">Valor Total</label>
+                          <p className="text-3xl font-black text-[#F59E0B] tracking-tighter">{formatCurrency(debt.remainingAmount)}</p>
+                        </div>
+
+                        <div className="flex flex-col gap-2 items-end">
+                          <label className="text-[9px] font-black text-[#94A3B8] uppercase tracking-widest">Ativar para Pagamento</label>
+                          <div className="flex items-center gap-2 bg-[#F1F5F9] p-1.5 rounded-xl border border-[#E2E8F0]">
+                             <button 
+                              onClick={() => {
+                                if (window.confirm(`Deseja mover "${debt.creditor}" para Pendente?`)) {
+                                  updateDebt(debt.id, { status: 'pending' });
+                                }
+                              }}
+                              className="bg-[#2563EB] text-white px-4 py-2 rounded-lg text-xs font-black uppercase hover:bg-[#1D4ED8] transition-all"
+                            >
+                              Mover p/ Pendentes
+                            </button>
+                            <button 
+                              onClick={() => {
+                                if (window.confirm('Excluir definitivamente este registro?')) {
+                                  deleteDebt(debt.id);
+                                }
+                              }}
+                              className="p-2 text-[#94A3B8] hover:text-[#EF4444]"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {debts.filter(d => d.status === 'on_hold').length === 0 && (
+                  <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-[#E2E8F0]">
+                    <History className="w-12 h-12 text-[#CBD5E1] mx-auto mb-4" />
+                    <p className="text-[#64748B] font-medium">Nenhuma dívida no plano de quitação.</p>
+                    <p className="text-xs text-[#94A3B8] mt-1">Coloque dívidas "Em Espera" na aba de Proventos para negociá-las aqui.</p>
+                  </div>
+                )}
               </div>
             </motion.div>
           )}

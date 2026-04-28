@@ -42,7 +42,7 @@ service cloud.firestore {
         && data.totalAmount is number
         && data.remainingAmount is number
         && data.dueDate is string
-        && data.status in ['pending', 'paid', 'overdue'];
+        && data.status in ['pending', 'paid', 'overdue', 'on_hold'];
     }
 
     function isValidCard(data) {
