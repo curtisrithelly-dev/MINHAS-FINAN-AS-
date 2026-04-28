@@ -31,6 +31,11 @@ export default function App() {
     ];
   });
 
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+
   const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'debts' | 'cards' | 'accounts' | 'negotiations'>('dashboard');
   const [isAddingTransaction, setIsAddingTransaction] = useState(false);
   const [isAddingIncome, setIsAddingIncome] = useState(false);
@@ -59,11 +64,40 @@ export default function App() {
   // Calculations
   const metrics = useMemo(() => {
     const totalBankBalance = bankAccounts.reduce((acc, ba) => acc + ba.balance, 0);
+    
+    const [year, month] = selectedMonth.split('-').map(Number);
     const totalDebt = debts
-      .filter(d => d.status !== 'on_hold')
+      .filter(d => {
+        if (d.status === 'on_hold') return false;
+        if (!d.dueDate) return false;
+        const [dYear, dMonth] = d.dueDate.split('-').map(Number);
+        return dYear === year && dMonth === month;
+      })
       .reduce((acc, d) => acc + d.remainingAmount, 0);
+      
     return { balance: totalBankBalance, totalDebt };
-  }, [bankAccounts, debts]);
+  }, [bankAccounts, debts, selectedMonth]);
+
+  const cleanupDuplicates = () => {
+    const seen = new Set<string>();
+    const uniqueDebts = debts.filter(debt => {
+      if (!debt.dueDate) return true;
+      const [y, m] = debt.dueDate.split('-');
+      // Chave única: Creditor + Ano + Mes + Valor (para identificar duplicatas do mesmo lançamento no mesmo mês)
+      const key = `${debt.creditor}-${y}-${m}-${debt.totalAmount}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    if (uniqueDebts.length !== debts.length) {
+      if (window.confirm(`${debts.length - uniqueDebts.length} duplicatas encontradas. Deseja removê-las?`)) {
+        setDebts(uniqueDebts);
+      }
+    } else {
+      alert("Nenhuma duplicata encontrada.");
+    }
+  };
 
   // Handlers
   const addTransaction = (t: Omit<Transaction, 'id'>, cardId?: string, bankAccountId?: string) => {
@@ -500,6 +534,39 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 md:px-6 py-4 md:py-8">
+        {/* Month Selector */}
+        <div className="flex items-center justify-between mb-6 bg-white p-3 rounded-2xl border border-[#E2E8F0] shadow-sm">
+          <button 
+            onClick={() => {
+              const [y, m] = selectedMonth.split('-').map(Number);
+              const d = new Date(y, m - 2, 1);
+              setSelectedMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+            }}
+            className="p-2 hover:bg-[#F1F5F9] rounded-xl transition-colors text-[#64748B]"
+          >
+            ←
+          </button>
+          <div className="flex flex-col items-center">
+            <span className="text-[10px] font-black text-[#94A3B8] uppercase tracking-widest">Período de Referência</span>
+            <input 
+              type="month" 
+              value={selectedMonth} 
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="text-lg font-black text-[#2563EB] bg-transparent outline-none cursor-pointer"
+            />
+          </div>
+          <button 
+            onClick={() => {
+              const [y, m] = selectedMonth.split('-').map(Number);
+              const d = new Date(y, m, 1);
+              setSelectedMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+            }}
+            className="p-2 hover:bg-[#F1F5F9] rounded-xl transition-colors text-[#64748B]"
+          >
+            →
+          </button>
+        </div>
+
         <AnimatePresence>
           {showCardManager && (
             <motion.div
@@ -595,9 +662,9 @@ export default function App() {
                   </p>
                 </div>
                 <div className="bg-white p-4 md:p-5 rounded-xl border border-[#E2E8F0] shadow-sm">
-                  <p className="text-[9px] md:text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1 md:mb-2 text-center md:text-left">Dívidas Gerais</p>
+                  <p className="text-[9px] md:text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1 md:mb-2 text-center md:text-left">Dívidas (Mês)</p>
                   <p className="text-xl md:text-3xl font-bold text-[#DC2626] text-center md:text-left">
-                    {formatCurrency(debts.filter(d => !d.creditor.startsWith('Fatura:')).reduce((acc, d) => acc + d.remainingAmount, 0))}
+                    {formatCurrency(metrics.totalDebt)}
                   </p>
                 </div>
                 <div className="bg-white p-4 md:p-5 rounded-xl border border-[#E2E8F0] shadow-sm flex flex-col justify-center gap-2 col-span-2 md:col-span-1">
@@ -649,7 +716,12 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#F1F5F9]">
-                        {debts.filter(d => d.status !== 'paid' && d.status !== 'on_hold').sort((a,b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()).slice(0, 10).map((debt) => (
+                        {debts.filter(d => {
+                          if (d.status === 'paid' || d.status === 'on_hold') return false;
+                          const [y, m] = d.dueDate.split('-').map(Number);
+                          const [selY, selM] = selectedMonth.split('-').map(Number);
+                          return y === selY && m === selM;
+                        }).sort((a,b) => a.dueDate.localeCompare(b.dueDate)).map((debt) => (
                           <tr key={debt.id} className="hover:bg-[#F8FAFC] transition-colors group">
                             <td className="px-5 py-3.5">
                               <p className="font-bold text-[#1E293B] text-sm">{debt.creditor}</p>
@@ -704,7 +776,12 @@ export default function App() {
 
                     {/* Mobile Card List */}
                     <div className="md:hidden divide-y divide-[#F1F5F9]">
-                      {debts.filter(d => d.status !== 'paid' && d.status !== 'on_hold').sort((a,b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()).slice(0, 15).map((debt) => (
+                      {debts.filter(d => {
+                        if (d.status === 'paid' || d.status === 'on_hold') return false;
+                        const [y, m] = d.dueDate.split('-').map(Number);
+                        const [selY, selM] = selectedMonth.split('-').map(Number);
+                        return y === selY && m === selM;
+                      }).sort((a,b) => a.dueDate.localeCompare(b.dueDate)).map((debt) => (
                         <div key={debt.id} className="p-4 space-y-3">
                           <div className="flex justify-between items-start">
                             <div>
@@ -1139,7 +1216,11 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#F1F5F9]">
-                    {transactions.map((t) => (
+                    {transactions.filter(t => {
+                      const [y, m] = t.date.split('-').map(Number);
+                      const [selY, selM] = selectedMonth.split('-').map(Number);
+                      return y === selY && m === selM;
+                    }).map((t) => (
                       <tr key={t.id} className="hover:bg-[#F8FAFC] transition-colors">
                         <td className="px-6 py-4">
                           <input 
@@ -1188,7 +1269,11 @@ export default function App() {
 
                 {/* Mobile List View */}
                 <div className="md:hidden divide-y divide-[#F1F5F9]">
-                  {transactions.map((t) => (
+                  {transactions.filter(t => {
+                    const [y, m] = t.date.split('-').map(Number);
+                    const [selY, selM] = selectedMonth.split('-').map(Number);
+                    return y === selY && m === selM;
+                  }).map((t) => (
                     <div key={t.id} className="p-4 space-y-2">
                        <div className="flex justify-between items-start">
                         <div className="flex-1 min-w-0 pr-4">
@@ -1234,15 +1319,23 @@ export default function App() {
               exit={{ opacity: 0, x: -20 }}
               className="space-y-6"
             >
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-4">
                 <h2 className="text-xl font-bold text-[#1E293B]">Controle de Dívidas</h2>
-                <button
-                  id="btn-add-debt-view"
-                  onClick={() => setIsAddingDebt(!isAddingDebt)}
-                  className="bg-[#2563EB] text-white px-4 py-2 rounded-lg flex items-center gap-2 text-xs font-bold hover:bg-[#1D4ED8]"
-                >
-                  <PlusCircle className="w-4 h-4" /> {isAddingDebt ? 'Fechar' : 'Nova Dívida'}
-                </button>
+                <div className="flex gap-2 w-full md:w-auto">
+                  <button 
+                    onClick={cleanupDuplicates}
+                    className="flex-1 md:flex-none px-4 py-2 border border-[#E2E8F0] text-[#64748B] rounded-lg text-xs font-bold uppercase hover:bg-[#F1F5F9] transition-all"
+                  >
+                    Limpar Duplicatas
+                  </button>
+                  <button
+                    id="btn-add-debt-view"
+                    onClick={() => setIsAddingDebt(!isAddingDebt)}
+                    className="flex-1 md:flex-none bg-[#2563EB] text-white px-4 py-2 rounded-lg flex items-center justify-center gap-2 text-xs font-bold hover:bg-[#1D4ED8]"
+                  >
+                    <PlusCircle className="w-4 h-4" /> {isAddingDebt ? 'Fechar' : 'Nova Dívida'}
+                  </button>
+                </div>
               </div>
 
               {isAddingDebt && (
@@ -1294,7 +1387,13 @@ export default function App() {
               )}
 
               <div className="grid grid-cols-1 gap-4">
-                {debts.filter(d => d.status !== 'on_hold').map((debt) => {
+                {debts.filter(d => {
+                  if (d.status === 'on_hold') return false;
+                  if (!d.dueDate) return false;
+                  const [y, m] = d.dueDate.split('-').map(Number);
+                  const [selY, selM] = selectedMonth.split('-').map(Number);
+                  return y === selY && m === selM;
+                }).sort((a,b) => a.dueDate.localeCompare(b.dueDate)).map((debt) => {
                   const isEditing = editingDebtId === debt.id;
                   
                   return (
