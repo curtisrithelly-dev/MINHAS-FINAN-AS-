@@ -5,22 +5,12 @@ export interface Transaction {
   category: string;
   type: 'income' | 'expense';
   description: string;
-  bankAccountId?: string; // Link to the account that funded/received the transaction
-}
-
-export interface BankAccount {
-  id: string;
-  name: string;
-  balance: number;
-  color?: string;
 }
 
 export interface DebtPayment {
   id: string;
   amount: number;
   date: string;
-  bankAccountId: string;
-  bankAccountName: string;
 }
 
 export interface Debt {
@@ -33,6 +23,7 @@ export interface Debt {
   notes?: string;
   category?: string;
   type?: 'fixed' | 'unique' | 'installments';
+  cardId?: string; // Link to a card if this is a card invoice
   installmentInfo?: {
     current: number;
     total: number;
@@ -47,6 +38,7 @@ export interface CreditCard {
   id: string;
   name: string;
   limit: number;
+  availableLimit: number;
   closingDay: number;
   dueDay: number;
   color?: string;

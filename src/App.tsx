@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, ChangeEvent } from 'react';
-import { PlusCircle, Wallet, ArrowUpCircle, ArrowDownCircle, CreditCard as CreditCardIcon, History, Trash2, Download, Upload } from 'lucide-react';
+import { PlusCircle, CreditCard as CreditCardIcon, History, Trash2, Download, Upload } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Transaction, Debt, CreditCard, BankAccount, DebtPayment } from './types';
+import { Transaction, Debt, CreditCard, DebtPayment } from './types';
 
 export default function App() {
   // Initialize state from localStorage
@@ -17,17 +17,9 @@ export default function App() {
     const saved = localStorage.getItem('cards');
     if (saved) return JSON.parse(saved);
     return [
-      { id: 'cc-1', name: 'Sicoob', limit: 1600, closingDay: 1, dueDay: 11, color: '#16A34A' },
-      { id: 'cc-2', name: 'Mercado Pago', limit: 500, closingDay: 5, dueDay: 10, color: '#2563EB' },
-      { id: 'cc-3', name: 'Nubank', limit: 200, closingDay: 12, dueDay: 20, color: '#9333EA' }
-    ];
-  });
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>(() => {
-    const saved = localStorage.getItem('bankAccounts');
-    if (saved) return JSON.parse(saved);
-    return [
-      { id: 'ba-1', name: 'Mercado Pago', balance: 3400.65, color: '#2563EB' },
-      { id: 'ba-3', name: 'Nubank', balance: 0, color: '#9333EA' }
+      { id: 'cc-1', name: 'Sicoob', limit: 1600, availableLimit: 1600, closingDay: 1, dueDay: 11, color: '#16A34A' },
+      { id: 'cc-2', name: 'Mercado Pago', limit: 500, availableLimit: 500, closingDay: 5, dueDay: 10, color: '#2563EB' },
+      { id: 'cc-3', name: 'Nubank', limit: 200, availableLimit: 200, closingDay: 12, dueDay: 20, color: '#9333EA' }
     ];
   });
 
@@ -36,11 +28,9 @@ export default function App() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'debts' | 'cards' | 'accounts' | 'negotiations'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'debts' | 'cards' | 'negotiations'>('dashboard');
   const [isAddingTransaction, setIsAddingTransaction] = useState(false);
-  const [isAddingIncome, setIsAddingIncome] = useState(false);
   const [isAddingDebt, setIsAddingDebt] = useState(false);
-  const [isTransferring, setIsTransferring] = useState(false);
   const [showCardManager, setShowCardManager] = useState(false);
   const [editingDebtId, setEditingDebtId] = useState<string | null>(null);
 
@@ -57,13 +47,10 @@ export default function App() {
     localStorage.setItem('cards', JSON.stringify(cards));
   }, [cards]);
 
-  useEffect(() => {
-    localStorage.setItem('bankAccounts', JSON.stringify(bankAccounts));
-  }, [bankAccounts]);
-
   // Calculations
   const metrics = useMemo(() => {
-    const totalBankBalance = bankAccounts.reduce((acc, ba) => acc + ba.balance, 0);
+    const totalLimit = cards.reduce((acc, c) => acc + c.limit, 0);
+    const totalAvailable = cards.reduce((acc, c) => acc + c.availableLimit, 0);
     
     const [year, month] = selectedMonth.split('-').map(Number);
     const totalDebt = debts
@@ -75,8 +62,8 @@ export default function App() {
       })
       .reduce((acc, d) => acc + d.remainingAmount, 0);
       
-    return { balance: totalBankBalance, totalDebt };
-  }, [bankAccounts, debts, selectedMonth]);
+    return { totalLimit, totalAvailable, totalDebt };
+  }, [cards, debts, selectedMonth]);
 
   const cleanupDuplicates = () => {
     const seen = new Set<string>();
@@ -100,75 +87,27 @@ export default function App() {
   };
 
   // Handlers
-  const addTransaction = (t: Omit<Transaction, 'id'>, cardId?: string, bankAccountId?: string) => {
+  const addTransaction = (t: Omit<Transaction, 'id'>, cardId?: string) => {
     const id = crypto.randomUUID();
-    const newTransaction: Transaction = { id, ...t, bankAccountId };
+    const newTransaction: Transaction = { id, ...t };
 
-    // 1. Limit validation for Credit Cards
+    // Limit validation and subtraction for Credit Cards
     if (cardId && t.type === 'expense') {
       const card = cards.find(c => c.id === cardId);
       if (card) {
-        const cardDebts = debts.filter(d => d.creditor.includes(card.name) && d.status !== 'paid');
-        const invoiceTotal = cardDebts.reduce((acc, d) => acc + d.remainingAmount, 0);
-        const available = card.limit - invoiceTotal;
+        if (t.amount > card.availableLimit) {
+          alert(`Limite insuficiente no cartão ${card.name}! Disponível: ${formatCurrency(card.availableLimit)}`);
+          return;
+        }
         
-        if (t.amount > available) {
-          alert(`Limite insuficiente no cartão ${card.name}! Disponível: ${formatCurrency(available)}`);
-          return;
-        }
+        // Subtract from available limit
+        setCards(cards.map(c => c.id === cardId ? { ...c, availableLimit: Number((c.availableLimit - t.amount).toFixed(2)) } : c));
         handleCardInvoiceAutoDebt(t.amount, t.date, cardId);
-      }
-    }
-
-    // 2. Balance updates for Bank Accounts
-    if (bankAccountId) {
-      const account = bankAccounts.find(ba => ba.id === bankAccountId);
-      if (account) {
-        if (t.type === 'expense' && account.balance < t.amount) {
-          alert(`Saldo insuficiente na conta ${account.name}!`);
-          return;
-        }
-        const newBalance = t.type === 'income' ? account.balance + t.amount : account.balance - t.amount;
-        setBankAccounts(bankAccounts.map(ba => ba.id === bankAccountId ? { ...ba, balance: Number(newBalance.toFixed(2)) } : ba));
       }
     }
 
     setTransactions([newTransaction, ...transactions]);
     setIsAddingTransaction(false);
-  };
-
-  const transferFunds = (fromId: string, toId: string, amount: number) => {
-    const fromAccount = bankAccounts.find(ba => ba.id === fromId);
-    if (!fromAccount || fromAccount.balance < amount) {
-      alert('Saldo insuficiente para transferência!');
-      return;
-    }
-
-    const toAccount = bankAccounts.find(ba => ba.id === toId);
-    setBankAccounts(bankAccounts.map(ba => {
-      if (ba.id === fromId) return { ...ba, balance: Number((ba.balance - amount).toFixed(2)) };
-      if (ba.id === toId) return { ...ba, balance: Number((ba.balance + amount).toFixed(2)) };
-      return ba;
-    }));
-
-    const date = new Date().toISOString().split('T')[0];
-    addTransaction({
-      description: `Transferência enviada para ${toAccount?.name}`,
-      amount,
-      type: 'expense',
-      category: 'Transferência',
-      date
-    }, undefined, fromId);
-
-    addTransaction({
-      description: `Transferência recebida de ${fromAccount.name}`,
-      amount,
-      type: 'income',
-      category: 'Transferência',
-      date
-    }, undefined, toId);
-
-    setIsTransferring(false);
   };
 
   const handleCardInvoiceAutoDebt = (amount: number, dateString: string, cardId: string) => {
@@ -200,6 +139,7 @@ export default function App() {
       const updatedDebts = [...debts];
       updatedDebts[existingDebtIndex] = {
         ...updatedDebts[existingDebtIndex],
+        cardId, // Ensure it's linked
         totalAmount: Number((updatedDebts[existingDebtIndex].totalAmount + amount).toFixed(2)),
         remainingAmount: Number((updatedDebts[existingDebtIndex].remainingAmount + amount).toFixed(2))
       };
@@ -207,6 +147,7 @@ export default function App() {
     } else {
       const newDebt: Debt = {
         id: crypto.randomUUID(),
+        cardId, // Link the card
         creditor: creditorName,
         totalAmount: amount,
         remainingAmount: amount,
@@ -271,32 +212,29 @@ export default function App() {
     setIsAddingDebt(false);
   };
 
-  const registerPayment = (debtId: string, amount: number, bankAccountId?: string) => {
-    if (!bankAccountId) {
-      alert('Selecione uma conta para realizar o pagamento.');
-      return;
-    }
-
+  const registerPayment = (debtId: string, amount: number) => {
     const debt = debts.find((d) => d.id === debtId);
     if (!debt) return;
-
-    const account = bankAccounts.find(ba => ba.id === bankAccountId);
-    if (!account || account.balance < amount) {
-      alert('Saldo insuficiente na conta selecionada!');
-      return;
-    }
 
     const paymentAmount = Math.min(amount, debt.remainingAmount);
     const newPayment: DebtPayment = {
       id: crypto.randomUUID(),
       amount: paymentAmount,
       date: new Date().toISOString().split('T')[0],
-      bankAccountId,
-      bankAccountName: account.name
+      bankAccountId: 'payment', // Meta info
+      bankAccountName: 'Dinheiro'
     };
 
     const remaining = Number((debt.remainingAmount - paymentAmount).toFixed(2));
     
+    // Restore card limit if paying a card invoice
+    if (debt.cardId) {
+      setCards(cards => cards.map(c => c.id === debt.cardId ? { 
+        ...c, 
+        availableLimit: Number((c.availableLimit + paymentAmount).toFixed(2)) 
+      } : c));
+    }
+
     setDebts(debts.map(d => d.id === debtId ? {
       ...d,
       remainingAmount: remaining,
@@ -304,15 +242,13 @@ export default function App() {
       payments: [...(d.payments || []), newPayment]
     } : d));
 
-    setBankAccounts(bankAccounts.map(ba => ba.id === bankAccountId ? { ...ba, balance: Number((ba.balance - paymentAmount).toFixed(2)) } : ba));
-
     addTransaction({
       amount: paymentAmount,
       type: 'expense',
       category: 'Dívida',
       date: new Date().toISOString().split('T')[0],
       description: `Pagamento: ${debt.creditor} ${debt.installmentInfo ? `(${debt.installmentInfo.current}/${debt.installmentInfo.total})` : ''}`,
-    }, undefined, bankAccountId);
+    });
   };
 
   const deleteDebt = (id: string, cascade: boolean = false, keepCurrent: boolean = false) => {
@@ -368,14 +304,7 @@ export default function App() {
   const deleteTransaction = (id: string) => setTransactions(transactions.filter(t => t.id !== id));
   const updateTransaction = (id: string, updates: Partial<Transaction>) => setTransactions(transactions.map(t => t.id === id ? { ...t, ...updates } : t));
   const updateDebt = (id: string, updates: Partial<Debt>) => setDebts(debts.map(d => d.id === id ? { ...d, ...updates } : d));
-  const updateBankAccount = (id: string, updates: Partial<BankAccount>) => setBankAccounts(bankAccounts.map(ba => ba.id === id ? { ...ba, ...updates } : ba));
   
-  const deleteBankAccount = (id: string) => {
-    if (window.confirm('Tem certeza que deseja excluir esta conta?')) {
-      setBankAccounts(bankAccounts.filter(ba => ba.id !== id));
-    }
-  };
-
   const updateCard = (id: string, updates: Partial<CreditCard>) => setCards(cards.map(c => c.id === id ? { ...c, ...updates } : c));
 
   const exportBackup = () => {
@@ -383,7 +312,6 @@ export default function App() {
       transactions,
       debts,
       cards,
-      bankAccounts,
       exportDate: new Date().toISOString(),
       version: '1.0'
     };
@@ -410,13 +338,12 @@ export default function App() {
     reader.onload = (e) => {
       try {
         const data = JSON.parse(e.target?.result as string);
-        if (!data.transactions || !data.debts || !data.cards || !data.bankAccounts) {
+        if (!data.transactions || !data.debts || !data.cards) {
           throw new Error('Arquivo de backup inválido');
         }
         setTransactions(data.transactions);
         setDebts(data.debts);
         setCards(data.cards);
-        setBankAccounts(data.bankAccounts);
         alert('Backup restaurado com sucesso! Seus dados foram sincronizados.');
       } catch (error) {
         alert('Erro ao processar arquivo de backup: ' + (error as Error).message);
@@ -491,7 +418,7 @@ export default function App() {
             
             <nav className="flex gap-1 bg-[#F1F5F9] p-1 rounded-xl w-full md:w-auto overflow-x-auto no-scrollbar">
               <div className="flex gap-1 min-w-max">
-                {(['dashboard', 'transactions', 'debts', 'negotiations', 'cards', 'accounts'] as const).map((tab) => (
+                {(['dashboard', 'transactions', 'debts', 'negotiations', 'cards'] as const).map((tab) => (
                   <button
                     key={tab}
                     id={`tab-${tab}`}
@@ -500,8 +427,7 @@ export default function App() {
                       activeTab === tab ? 'bg-white text-[#2563EB] shadow-sm' : 'text-[#64748B] hover:text-[#1E293B]'
                     }`}
                   >
-                    {tab === 'accounts' ? 'Bancos' : 
-                     tab === 'negotiations' ? 'Negociações' :
+                    {tab === 'negotiations' ? 'Negociações' :
                      tab.charAt(0).toUpperCase() + tab.slice(1)}
                   </button>
                 ))}
@@ -656,9 +582,9 @@ export default function App() {
             >
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6">
                 <div className="bg-white p-4 md:p-5 rounded-xl border border-[#E2E8F0] shadow-sm">
-                  <p className="text-[9px] md:text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1 md:mb-2 text-center md:text-left">Saldo (Bancos)</p>
-                  <p className={`text-xl md:text-3xl font-bold text-center md:text-left ${metrics.balance >= 0 ? 'text-[#16A34A]' : 'text-[#DC2626]'}`}>
-                    {formatCurrency(metrics.balance)}
+                  <p className="text-[9px] md:text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1 md:mb-2 text-center md:text-left">Limite Disponível</p>
+                  <p className={`text-xl md:text-3xl font-bold text-center md:text-left ${metrics.totalAvailable > 0 ? 'text-[#16A34A]' : 'text-[#DC2626]'}`}>
+                    {formatCurrency(metrics.totalAvailable)}
                   </p>
                 </div>
                 <div className="bg-white p-4 md:p-5 rounded-xl border border-[#E2E8F0] shadow-sm">
@@ -670,29 +596,23 @@ export default function App() {
                 <div className="bg-white p-4 md:p-5 rounded-xl border border-[#E2E8F0] shadow-sm flex flex-col justify-center gap-2 col-span-2 md:col-span-1">
                   <div className="grid grid-cols-2 md:grid-cols-1 gap-2">
                     <button 
-                      onClick={() => { setActiveTab('accounts'); setIsAddingIncome(true); }}
-                      className="w-full bg-[#16A34A] text-white py-2.5 rounded-lg text-[9px] md:text-[10px] font-bold uppercase tracking-wide hover:bg-[#15803d]"
-                    >
-                      + Receita
-                    </button>
-                    <button 
                       onClick={() => { setActiveTab('transactions'); setIsAddingTransaction(true); }}
                       className="w-full bg-[#2563EB] text-white py-2.5 rounded-lg text-[9px] md:text-[10px] font-bold uppercase tracking-wide hover:bg-[#1D4ED8]"
                     >
-                      + Gasto
+                      + Novo Gasto
+                    </button>
+                    <button 
+                      onClick={() => { setActiveTab('debts'); setIsAddingDebt(true); }}
+                      className="w-full bg-[#1E293B] text-white py-2.5 rounded-lg text-[9px] md:text-[10px] font-bold uppercase tracking-wide hover:bg-black"
+                    >
+                      + Nova Dívida
                     </button>
                   </div>
-                  <button 
-                    onClick={() => { setActiveTab('accounts'); setIsTransferring(true); }}
-                    className="w-full bg-white text-[#2563EB] border border-[#2563EB] py-2 rounded-lg text-[9px] md:text-[10px] font-bold uppercase tracking-wide"
-                  >
-                    Transferir
-                  </button>
                 </div>
                 <div className="bg-white p-4 md:p-5 rounded-xl border border-[#E2E8F0] shadow-sm col-span-2 md:col-span-1">
-                  <p className="text-[9px] md:text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1 md:mb-2 text-center md:text-left">Total Faturas</p>
-                  <p className="text-xl md:text-3xl font-bold text-[#F59E0B] text-center md:text-left">
-                    {formatCurrency(debts.filter(d => d.creditor.startsWith('Fatura:')).reduce((acc, d) => acc + d.remainingAmount, 0))}
+                  <p className="text-[9px] md:text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1 md:mb-2 text-center md:text-left">Limite Total</p>
+                  <p className="text-xl md:text-3xl font-bold text-[#2563EB] text-center md:text-left">
+                    {formatCurrency(metrics.totalLimit)}
                   </p>
                 </div>
               </div>
@@ -750,22 +670,15 @@ export default function App() {
                               </div>
                             </td>
                             <td className="px-5 py-3.5">
-                              <div className="flex justify-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                <select 
-                                  id={`dash-pay-account-${debt.id}`}
-                                  className="text-[10px] font-black bg-[#F1F5F9] border border-[#E2E8F0] p-1.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]"
-                                >
-                                  {bankAccounts.map(ba => ba && <option key={ba.id} value={ba.id}>{ba.name}</option>)}
-                                </select>
+                              <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    const select = document.getElementById(`dash-pay-account-${debt.id}`) as HTMLSelectElement;
-                                    registerPayment(debt.id, debt.remainingAmount || 0, select?.value);
+                                    registerPayment(debt.id, debt.remainingAmount || 0);
                                   }}
-                                  className="bg-[#2563EB] text-white px-4 py-1.5 rounded-lg text-[10px] font-bold hover:bg-[#1D4ED8] shadow-sm transform active:scale-95 transition-all"
+                                  className="bg-[#2563EB] text-white px-6 py-1.5 rounded-lg text-[10px] font-bold hover:bg-[#1D4ED8] shadow-sm transform active:scale-95 transition-all"
                                 >
-                                  Pagar
+                                  Pagar Conta
                                 </button>
                               </div>
                             </td>
@@ -796,20 +709,13 @@ export default function App() {
                             </div>
                           </div>
                           <div className="flex gap-2">
-                            <select 
-                              id={`dash-pay-account-mobile-${debt.id}`}
-                              className="flex-1 text-[10px] font-black bg-[#F1F5F9] border border-[#E2E8F0] p-2.5 rounded-xl outline-none"
-                            >
-                              {bankAccounts.map(ba => ba && <option key={ba.id} value={ba.id}>{ba.name}</option>)}
-                            </select>
                             <button
                               onClick={() => {
-                                const select = document.getElementById(`dash-pay-account-mobile-${debt.id}`) as HTMLSelectElement;
-                                registerPayment(debt.id, debt.remainingAmount || 0, select?.value);
+                                registerPayment(debt.id, debt.remainingAmount || 0);
                               }}
-                              className="bg-[#2563EB] text-white px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider"
+                              className="w-full bg-[#2563EB] text-white py-2.5 rounded-xl text-xs font-black uppercase tracking-wider"
                             >
-                              Pagar
+                              Confirmar Pagamento
                             </button>
                           </div>
                         </div>
@@ -826,43 +732,8 @@ export default function App() {
 
                 {/* Bank status (Span 4) */}
                 <div className="md:col-span-4 space-y-4">
-                  <div className="bg-white p-5 rounded-xl border border-[#E2E8F0] shadow-sm">
-                    <h2 className="font-bold text-xs uppercase tracking-wide text-[#1E293B] mb-4">Saldos Bancários (Edição Manual)</h2>
-                    <div className="space-y-3">
-                      {bankAccounts.map(account => (
-                        <div key={account.id} className="flex justify-between items-center p-3 rounded-lg bg-[#F8FAFC] border border-[#F1F5F9]">
-                          <div className="flex items-center gap-2">
-                            <button 
-                              onClick={() => deleteBankAccount(account.id)}
-                              className="p-1 text-[#94A3B8] hover:text-[#EF4444] transition-colors"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                            <p className="text-[11px] font-bold text-[#64748B] uppercase">{account.name}</p>
-                          </div>
-                          <input 
-                            type="number" 
-                            step="0.01"
-                            className="font-black text-sm text-[#1E293B] bg-transparent text-right outline-none focus:text-[#2563EB] w-24"
-                            value={account.balance}
-                            onChange={(e) => updateBankAccount(account.id, { balance: Number(e.target.value) })}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <button 
-                      onClick={() => setActiveTab('accounts')}
-                      className="w-full mt-4 text-[10px] font-bold text-[#2563EB] uppercase hover:underline"
-                    >
-                      Gerenciar Contas
-                    </button>
-                  </div>
-
                   {cards.map(card => {
-                    const invoiceTotal = debts
-                      .filter(d => d.creditor.includes(card.name) && d.status !== 'paid')
-                      .reduce((acc, d) => acc + d.remainingAmount, 0);
-                    const usagePercent = Math.min(100, (invoiceTotal / card.limit) * 100);
+                    const usagePercent = Math.min(100, ((card.limit - card.availableLimit) / card.limit) * 100);
                     
                     return (
                       <div key={card.id} className="bg-white p-5 rounded-xl border border-[#E2E8F0] shadow-sm">
@@ -876,151 +747,17 @@ export default function App() {
                         <div className="flex justify-between items-end">
                           <div>
                             <p className="text-[9px] font-bold text-[#94A3B8] uppercase">Utilizado</p>
-                            <p className="text-lg font-black text-[#1E293B]">{formatCurrency(invoiceTotal)}</p>
+                            <p className="text-lg font-black text-[#1E293B]">{formatCurrency(card.limit - card.availableLimit)}</p>
                           </div>
                           <div>
                             <p className="text-[9px] font-bold text-[#94A3B8] uppercase text-right">Disponível</p>
-                            <p className="text-sm font-bold text-[#16A34A]">{formatCurrency(card.limit - invoiceTotal)}</p>
+                            <p className="text-sm font-bold text-[#16A34A]">{formatCurrency(card.availableLimit)}</p>
                           </div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
-              </div>
-            </motion.div>
-          )}
-
-          {activeTab === 'accounts' && (
-            <motion.div
-              key="accounts"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-6"
-            >
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-[#1E293B]">Minhas Contas</h2>
-                <button
-                  onClick={() => setIsTransferring(!isTransferring)}
-                  className="bg-[#2563EB] text-white px-4 py-2 rounded-lg flex items-center gap-2 text-xs font-bold hover:bg-[#1D4ED8]"
-                >
-                  <ArrowUpCircle className="w-4 h-4" /> Nova Transferência
-                </button>
-              </div>
-
-              {isAddingIncome && (
-                <div className="bg-white p-6 rounded-xl border border-[#E2E8F0] shadow-md max-w-md">
-                  <h3 className="font-bold mb-4 text-[#1E293B]">Adicionar Receita (Depósito/Pix)</h3>
-                  <form onSubmit={(e) => {
-                    e.preventDefault();
-                    const fd = new FormData(e.currentTarget);
-                    addTransaction({
-                      description: fd.get('description') as string,
-                      amount: Number(fd.get('amount')),
-                      type: 'income',
-                      category: 'Receita',
-                      date: fd.get('date') as string,
-                    }, undefined, fd.get('bankAccountId') as string);
-                    setIsAddingIncome(false);
-                  }} className="space-y-4 text-sm">
-                    <div>
-                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Descrição</label>
-                      <input name="description" required placeholder="Ex: Salário, Venda..." className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Destino</label>
-                      <select name="bankAccountId" required className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]">
-                        {bankAccounts.map(ba => <option key={ba.id} value={ba.id}>{ba.name}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Valor (R$)</label>
-                      <input name="amount" type="number" step="0.01" required className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Data</label>
-                      <input name="date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]" />
-                    </div>
-                    <div className="pt-2 flex gap-3">
-                      <button type="submit" className="flex-1 bg-[#16A34A] text-white py-2.5 rounded-lg font-bold">Adicionar</button>
-                      <button type="button" onClick={() => setIsAddingIncome(false)} className="flex-1 bg-[#F1F5F9] text-[#64748B] py-2.5 rounded-lg font-bold">Cancelar</button>
-                    </div>
-                  </form>
-                </div>
-              )}
-
-              {isTransferring && (
-                <div className="bg-white p-6 rounded-xl border border-[#E2E8F0] shadow-md max-w-md">
-                  <h3 className="font-bold mb-4 text-[#1E293B]">Transferir entre Contas</h3>
-                  <form onSubmit={(e) => {
-                    e.preventDefault();
-                    const fd = new FormData(e.currentTarget);
-                    transferFunds(
-                      fd.get('fromId') as string,
-                      fd.get('toId') as string,
-                      Number(fd.get('amount'))
-                    );
-                  }} className="space-y-4 text-sm">
-                    <div>
-                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Origem</label>
-                      <select name="fromId" required className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]">
-                        {bankAccounts.map(ba => <option key={ba.id} value={ba.id}>{ba.name} ({formatCurrency(ba.balance)})</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Destino</label>
-                      <select name="toId" required className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]">
-                        {bankAccounts.map(ba => <option key={ba.id} value={ba.id}>{ba.name}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Valor (R$)</label>
-                      <input name="amount" type="number" step="0.01" required className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]" />
-                    </div>
-                    <div className="pt-2 flex gap-3">
-                      <button type="submit" className="flex-1 bg-[#2563EB] text-white py-2.5 rounded-lg font-bold hover:bg-[#1D4ED8]">Transferir</button>
-                      <button type="button" onClick={() => setIsTransferring(false)} className="flex-1 bg-[#F1F5F9] text-[#64748B] py-2.5 rounded-lg font-bold">Cancelar</button>
-                    </div>
-                  </form>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-                {bankAccounts.map((account, idx) => (
-                  <div key={account.id} className="bg-white rounded-xl border border-[#E2E8F0] shadow-md overflow-hidden p-6 relative">
-                    <div className="flex justify-between items-start mb-6">
-                      <div className="p-3 rounded-xl bg-[#F1F5F9]">
-                        <Wallet className="w-6 h-6 text-[#2563EB]" />
-                      </div>
-                      <div className="flex flex-col items-end">
-                        <span className="text-[10px] font-bold text-[#94A3B8] uppercase">Saldo Atual</span>
-                        <input 
-                          type="number"
-                          step="0.01"
-                          className="text-2xl font-black text-[#1E293B] bg-transparent text-right outline-none focus:text-[#2563EB] w-40"
-                          value={account.balance}
-                          onChange={(e) => updateBankAccount(account.id, { balance: Number(e.target.value) })}
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Nome da Conta</label>
-                        <input 
-                          className="w-full font-bold text-sm bg-transparent border-b border-[#E2E8F0] pb-1 outline-none focus:border-[#2563EB]"
-                          value={account.name}
-                          onChange={(e) => {
-                            const newAccounts = [...bankAccounts];
-                            newAccounts[idx].name = e.target.value;
-                            setBankAccounts(newAccounts);
-                          }}
-                        />
-                      </div>
-                      <p className="text-[10px] text-[#64748B]">Esta conta é utilizada para pagar cartões e registrar gastos no Débito/Pix.</p>
-                    </div>
-                  </div>
-                ))}
               </div>
             </motion.div>
           )}
@@ -1095,11 +832,11 @@ export default function App() {
                           <div className="grid grid-cols-2 gap-4 pt-2">
                             <div className="bg-[#F8FAFC] p-3 rounded-lg border border-[#F1F5F9]">
                               <p className="text-[9px] font-bold text-[#94A3B8] uppercase">Fatura Atual</p>
-                              <p className="text-lg font-black text-[#E11D48]">{formatCurrency(invoiceTotal)}</p>
+                              <p className="text-lg font-black text-[#E11D48]">{formatCurrency(card.limit - card.availableLimit)}</p>
                             </div>
                             <div className="bg-[#F8FAFC] p-3 rounded-lg border border-[#F1F5F9]">
                               <p className="text-[9px] font-bold text-[#94A3B8] uppercase">Limite Disp.</p>
-                              <p className="text-lg font-black text-[#16A34A]">{formatCurrency(card.limit - invoiceTotal)}</p>
+                              <p className="text-lg font-black text-[#16A34A]">{formatCurrency(card.availableLimit)}</p>
                             </div>
                           </div>
 
@@ -1183,18 +920,14 @@ export default function App() {
                       <input name="date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]" />
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Método / Conta (Pix ou Débito)</label>
+                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Método de Pagamento</label>
                       <select name="method" required className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]">
-                        <optgroup label="Pagar com Cartão (Fatura)">
+                        <optgroup label="Usar Cartão (Fatura)">
                           {cards.map(card => (
-                            <option key={card.id} value={`cc:${card.id}`}>{card.name} (Limite: {formatCurrency(card.limit)})</option>
+                            <option key={card.id} value={`cc:${card.id}`}>{card.name} (Disp: {formatCurrency(card.availableLimit)})</option>
                           ))}
                         </optgroup>
-                        <optgroup label="Sair do Saldo (Pix / Débito)">
-                          {bankAccounts.map(ba => (
-                            <option key={ba.id} value={`ba:${ba.id}`}>{ba.name} (Saldo: {formatCurrency(ba.balance)})</option>
-                          ))}
-                        </optgroup>
+                        <option value="other:direct">Dinheiro / Pix Direto</option>
                       </select>
                     </div>
                     <div className="md:col-span-2 pt-2 flex gap-3">
@@ -1587,25 +1320,18 @@ export default function App() {
 
                           {debt.status !== 'paid' && !isEditing && (
                             <div className="flex items-center gap-2 bg-[#F8FAFC] p-2 rounded-2xl border border-[#F1F5F9] w-full sm:w-auto">
-                              <select 
-                                id={`manage-pay-account-${debt.id}`}
-                                className="bg-transparent text-[10px] font-black uppercase outline-none px-1 flex-1 sm:flex-none"
-                              >
-                                {bankAccounts.map(ba => <option key={ba.id} value={ba.id}>{ba.name}</option>)}
-                              </select>
                               <input
                                 id={`manage-pay-input-${debt.id}`}
                                 type="number"
                                 defaultValue={debt.remainingAmount}
-                                className="w-20 bg-white border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-black text-[#2563EB] outline-none"
+                                className="flex-1 sm:w-28 bg-white border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-black text-[#2563EB] outline-none"
                               />
                               <button
                                 onClick={() => {
                                   const input = document.getElementById(`manage-pay-input-${debt.id}`) as HTMLInputElement;
-                                  const select = document.getElementById(`manage-pay-account-${debt.id}`) as HTMLSelectElement;
                                   const val = Number(input.value);
                                   if (val > 0) {
-                                    registerPayment(debt.id, val, select.value);
+                                    registerPayment(debt.id, val);
                                   }
                                 }}
                                 className="bg-[#1E293B] text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-black transition-all"
