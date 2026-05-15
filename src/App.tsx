@@ -28,7 +28,7 @@ export default function App() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'debts' | 'cards' | 'negotiations'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'debts' | 'cards' | 'negotiations' | 'work-summary'>('dashboard');
   const [isAddingTransaction, setIsAddingTransaction] = useState(false);
   const [isAddingDebt, setIsAddingDebt] = useState(false);
   const [showCardManager, setShowCardManager] = useState(false);
@@ -229,15 +229,18 @@ export default function App() {
     setIsAddingDebt(false);
   };
 
-  const registerPayment = (debtId: string, amount: number) => {
+  const registerPayment = (debtId: string, amount: number, interest: number = 0) => {
     const debt = debts.find((d) => d.id === debtId);
     if (!debt) return;
 
     const paymentAmount = Math.min(amount, debt.remainingAmount);
+    const totalPaid = Number((paymentAmount + interest).toFixed(2));
+    
     const newPayment: DebtPayment = {
       id: crypto.randomUUID(),
       amount: paymentAmount,
-      date: new Date().toISOString().split('T')[0]
+      date: new Date().toISOString().split('T')[0],
+      interest: interest > 0 ? interest : undefined
     };
 
     const remaining = Number((debt.remainingAmount - paymentAmount).toFixed(2));
@@ -246,7 +249,7 @@ export default function App() {
     if (debt.cardId) {
       setCards(cards => cards.map(c => c.id === debt.cardId ? { 
         ...c, 
-        availableLimit: Number((c.availableLimit + paymentAmount).toFixed(2)) 
+        availableLimit: Number((c.availableLimit + totalPaid).toFixed(2)) 
       } : c));
     }
 
@@ -258,11 +261,11 @@ export default function App() {
     } : d));
 
     addTransaction({
-      amount: paymentAmount,
+      amount: totalPaid,
       type: 'expense',
       category: 'Dívida',
       date: new Date().toISOString().split('T')[0],
-      description: `Pagamento: ${debt.creditor} ${debt.installmentInfo ? `(${debt.installmentInfo.current}/${debt.installmentInfo.total})` : ''}`,
+      description: `Pagamento: ${debt.creditor} ${debt.installmentInfo ? `(${debt.installmentInfo.current}/${debt.installmentInfo.total})` : ''}${interest > 0 ? ` (Inc. Juros: ${formatCurrency(interest)})` : ''}`,
       isWorkExpense: debt.isWorkExpense
     });
   };
@@ -474,7 +477,7 @@ export default function App() {
             
             <nav className="flex gap-1 bg-[#F1F5F9] p-1 rounded-xl w-full md:w-auto overflow-x-auto no-scrollbar">
               <div className="flex gap-1 min-w-max">
-                {(['dashboard', 'transactions', 'debts', 'negotiations', 'cards'] as const).map((tab) => (
+                {(['dashboard', 'transactions', 'debts', 'negotiations', 'cards', 'work-summary'] as const).map((tab) => (
                   <button
                     key={tab}
                     id={`tab-${tab}`}
@@ -484,6 +487,7 @@ export default function App() {
                     }`}
                   >
                     {tab === 'negotiations' ? 'Negociações' :
+                     tab === 'work-summary' ? 'Resumo da Obra' :
                      tab.charAt(0).toUpperCase() + tab.slice(1)}
                   </button>
                 ))}
@@ -726,16 +730,44 @@ export default function App() {
                               </div>
                             </td>
                             <td className="px-5 py-3.5">
-                              <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    registerPayment(debt.id, debt.remainingAmount || 0);
-                                  }}
-                                  className="bg-[#2563EB] text-white px-6 py-1.5 rounded-lg text-[10px] font-bold hover:bg-[#1D4ED8] shadow-sm transform active:scale-95 transition-all"
-                                >
-                                  Pagar Conta
-                                </button>
+                              <div className="flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center gap-2">
+                                  <div className="flex flex-col">
+                                    <label className="text-[8px] font-bold text-[#94A3B8] uppercase tracking-tighter">Valor</label>
+                                    <input 
+                                      id={`desktop-pay-input-${debt.id}`}
+                                      type="number"
+                                      step="0.01"
+                                      className="w-20 text-xs font-bold text-[#2563EB] bg-[#F1F5F9] border border-[#E2E8F0] p-1.5 rounded outline-none"
+                                      defaultValue={debt.remainingAmount}
+                                    />
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <label className="text-[8px] font-bold text-[#94A3B8] uppercase tracking-tighter">Juros</label>
+                                    <input 
+                                      id={`desktop-pay-interest-${debt.id}`}
+                                      type="number"
+                                      step="0.01"
+                                      placeholder="0,00"
+                                      className="w-16 text-xs font-bold text-[#E11D48] bg-[#F1F5F9] border border-[#E2E8F0] p-1.5 rounded outline-none"
+                                    />
+                                  </div>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const input = document.getElementById(`desktop-pay-input-${debt.id}`) as HTMLInputElement;
+                                      const interestInput = document.getElementById(`desktop-pay-interest-${debt.id}`) as HTMLInputElement;
+                                      const val = Number(input.value);
+                                      const interest = Number(interestInput.value || 0);
+                                      if (val > 0 || interest > 0) {
+                                        registerPayment(debt.id, val, interest);
+                                      }
+                                    }}
+                                    className="bg-[#2563EB] text-white px-4 py-1.5 rounded-lg text-[10px] font-bold hover:bg-[#1D4ED8] shadow-sm transform active:scale-95 transition-all self-end h-[32px]"
+                                  >
+                                    Pagar
+                                  </button>
+                                </div>
                               </div>
                             </td>
                           </tr>
@@ -764,10 +796,36 @@ export default function App() {
                               <span className="text-[8px] font-bold text-[#CBD5E1] uppercase tracking-tighter italic">Pendente</span>
                             </div>
                           </div>
-                          <div className="flex gap-2">
+                          <div className="flex flex-col gap-2 w-full">
+                            <div className="flex items-center gap-2 bg-[#F8FAFC] p-2 rounded-2xl border border-[#E2E8F0] w-full">
+                                <div className="flex flex-col flex-1">
+                                  <label className="text-[8px] font-black text-[#94A3B8] uppercase px-1">Valor</label>
+                                  <input
+                                    id={`dashboard-pay-input-${debt.id}`}
+                                    type="number"
+                                    defaultValue={debt.remainingAmount}
+                                    className="w-full bg-white border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-black text-[#2563EB] outline-none"
+                                  />
+                                </div>
+                                <div className="flex flex-col flex-1">
+                                  <label className="text-[8px] font-black text-[#94A3B8] uppercase px-1">Juros</label>
+                                  <input
+                                    id={`dashboard-pay-interest-${debt.id}`}
+                                    type="number"
+                                    placeholder="0,00"
+                                    className="w-full bg-white border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-black text-[#E11D48] outline-none"
+                                  />
+                                </div>
+                            </div>
                             <button
                               onClick={() => {
-                                registerPayment(debt.id, debt.remainingAmount || 0);
+                                const input = document.getElementById(`dashboard-pay-input-${debt.id}`) as HTMLInputElement;
+                                const interestInput = document.getElementById(`dashboard-pay-interest-${debt.id}`) as HTMLInputElement;
+                                const val = Number(input.value);
+                                const interest = Number(interestInput.value || 0);
+                                if (val > 0 || interest > 0) {
+                                  registerPayment(debt.id, val, interest);
+                                }
                               }}
                               className="w-full bg-[#2563EB] text-white py-2.5 rounded-xl text-xs font-black uppercase tracking-wider"
                             >
@@ -1406,28 +1464,42 @@ export default function App() {
                             )}
                           </div>
 
-                          {debt.status !== 'paid' && !isEditing && (
-                            <div className="flex items-center gap-2 bg-[#F8FAFC] p-2 rounded-2xl border border-[#F1F5F9] w-full sm:w-auto">
-                              <input
-                                id={`manage-pay-input-${debt.id}`}
-                                type="number"
-                                defaultValue={debt.remainingAmount}
-                                className="flex-1 sm:w-28 bg-white border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-black text-[#2563EB] outline-none"
-                              />
-                              <button
-                                onClick={() => {
-                                  const input = document.getElementById(`manage-pay-input-${debt.id}`) as HTMLInputElement;
-                                  const val = Number(input.value);
-                                  if (val > 0) {
-                                    registerPayment(debt.id, val);
-                                  }
-                                }}
-                                className="bg-[#1E293B] text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-black transition-all"
-                              >
-                                Pagar
-                              </button>
+                            <div className="flex flex-col gap-2">
+                              <div className="flex items-center gap-2 bg-[#F8FAFC] p-2 rounded-2xl border border-[#F1F5F9] w-full sm:w-auto">
+                                <div className="flex flex-col">
+                                  <label className="text-[8px] font-black text-[#94A3B8] uppercase px-1">Valor</label>
+                                  <input
+                                    id={`manage-pay-input-${debt.id}`}
+                                    type="number"
+                                    defaultValue={debt.remainingAmount}
+                                    className="flex-1 sm:w-28 bg-white border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-black text-[#2563EB] outline-none"
+                                  />
+                                </div>
+                                <div className="flex flex-col">
+                                  <label className="text-[8px] font-black text-[#94A3B8] uppercase px-1">Juros</label>
+                                  <input
+                                    id={`manage-pay-interest-${debt.id}`}
+                                    type="number"
+                                    placeholder="0,00"
+                                    className="flex-1 sm:w-20 bg-white border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-black text-[#E11D48] outline-none"
+                                  />
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    const input = document.getElementById(`manage-pay-input-${debt.id}`) as HTMLInputElement;
+                                    const interestInput = document.getElementById(`manage-pay-interest-${debt.id}`) as HTMLInputElement;
+                                    const val = Number(input.value);
+                                    const interest = Number(interestInput.value || 0);
+                                    if (val > 0 || interest > 0) {
+                                      registerPayment(debt.id, val, interest);
+                                    }
+                                  }}
+                                  className="bg-[#1E293B] text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-black transition-all h-full self-end"
+                                >
+                                  Pagar
+                                </button>
+                              </div>
                             </div>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -1513,6 +1585,94 @@ export default function App() {
                     <p className="text-xs text-[#94A3B8] mt-1">Coloque dívidas "Em Espera" para negociá-las aqui.</p>
                   </div>
                 )}
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'work-summary' && (
+            <motion.div
+              key="work-summary"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              className="space-y-6"
+            >
+              <div className="bg-[#1E293B] p-8 rounded-3xl text-white shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-[#2563EB] opacity-10 rounded-full -mr-20 -mt-20 blur-3xl"></div>
+                <div className="relative z-10">
+                  <p className="text-[11px] font-black uppercase tracking-[0.3em] text-[#94A3B8] mb-2">Investimento Total na Construção</p>
+                  <h2 className="text-5xl font-black tracking-tighter mb-6">
+                    {formatCurrency(
+                      transactions.filter(t => t.isWorkExpense).reduce((acc, t) => acc + t.amount, 0) +
+                      debts.filter(d => d.isWorkExpense).reduce((acc, d) => acc + d.remainingAmount, 0)
+                    )}
+                  </h2>
+                  <div className="grid grid-cols-2 gap-8 border-t border-white/10 pt-6">
+                    <div>
+                      <p className="text-[10px] font-bold text-[#94A3B8] uppercase mb-1">Pago até agora</p>
+                      <p className="text-xl font-bold text-[#16A34A]">
+                        {formatCurrency(transactions.filter(t => t.isWorkExpense).reduce((acc, t) => acc + t.amount, 0))}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-[#94A3B8] uppercase mb-1">A pagar (Restante)</p>
+                      <p className="text-xl font-bold text-[#E11D48]">
+                        {formatCurrency(debts.filter(d => d.isWorkExpense).reduce((acc, d) => acc + d.remainingAmount, 0))}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+                <div className="p-5 border-b border-[#F1F5F9] bg-[#FCFCFD]">
+                  <h3 className="font-bold text-sm uppercase tracking-tight">Detalhamento dos Custos</h3>
+                </div>
+                <div className="divide-y divide-[#F1F5F9]">
+                  {[
+                    ...transactions.filter(t => t.isWorkExpense).map(t => ({ 
+                      id: t.id, 
+                      name: t.description, 
+                      amount: t.amount, 
+                      date: t.date, 
+                      type: 'Pago',
+                      card: t.cardId ? cards.find(c => c.id === t.cardId)?.name : 'Dinheiro/Pix'
+                    })),
+                    ...debts.filter(d => d.isWorkExpense).map(d => ({ 
+                      id: d.id, 
+                      name: d.creditor, 
+                      amount: d.remainingAmount, 
+                      date: d.dueDate || '', 
+                      type: 'Pendente',
+                      card: d.cardId ? cards.find(c => c.id === d.cardId)?.name : 'A Faturar'
+                    }))
+                  ].sort((a, b) => b.date.localeCompare(a.date)).map((item, idx) => (
+                    <div key={idx} className="p-4 flex justify-between items-center hover:bg-[#F8FAFC] transition-colors">
+                      <div className="flex-1 pr-4">
+                        <p className="font-bold text-sm text-[#1E293B]">{item.name}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[10px] font-bold text-[#94A3B8] uppercase">{formatDate(item.date)}</span>
+                          <span className="text-[10px] text-[#CBD5E1]">•</span>
+                          <span className="text-[10px] font-bold text-[#2563EB] uppercase tracking-tighter">{item.card}</span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-black text-[#1E293B]">{formatCurrency(item.amount)}</p>
+                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded ${
+                          item.type === 'Pago' ? 'bg-[#DCFCE7] text-[#166534]' : 'bg-[#FEE2E2] text-[#991B1B]'
+                        }`}>
+                          {item.type.trim()}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  {transactions.filter(t => t.isWorkExpense).length === 0 && debts.filter(d => d.isWorkExpense).length === 0 && (
+                    <div className="py-20 text-center">
+                      <p className="text-[#94A3B8] font-medium text-xs">Nenhum gasto da obra registrado ainda.</p>
+                      <p className="text-[10px] text-[#CBD5E1] mt-1">Marque a opção "Gasto da Obra" ao adicionar despesas.</p>
+                    </div>
+                  )}
+                </div>
               </div>
             </motion.div>
           )}

@@ -13,6 +13,7 @@ export interface DebtPayment {
   id: string;
   amount: number;
   date: string;
+  interest?: number;
 }
 
 export interface Debt {
