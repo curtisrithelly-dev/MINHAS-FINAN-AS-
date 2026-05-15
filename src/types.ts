@@ -5,6 +5,8 @@ export interface Transaction {
   category: string;
   type: 'income' | 'expense';
   description: string;
+  isWorkExpense?: boolean;
+  cardId?: string;
 }
 
 export interface DebtPayment {
@@ -24,6 +26,7 @@ export interface Debt {
   category?: string;
   type?: 'fixed' | 'unique' | 'installments';
   cardId?: string; // Link to a card if this is a card invoice
+  isWorkExpense?: boolean;
   installmentInfo?: {
     current: number;
     total: number;

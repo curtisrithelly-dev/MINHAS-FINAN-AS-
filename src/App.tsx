@@ -61,9 +61,26 @@ export default function App() {
         return dYear === year && dMonth === month;
       })
       .reduce((acc, d) => acc + d.remainingAmount, 0);
+
+    const totalWorkExpensesCurrentMonth = transactions
+      .filter(t => {
+        if (!t.isWorkExpense) return false;
+        const [tYear, tMonth] = t.date.split('-').map(Number);
+        return tYear === year && tMonth === month;
+      })
+      .reduce((acc, t) => acc + t.amount, 0);
+
+    const totalWorkDebtsCurrentMonth = debts
+      .filter(d => {
+        if (!d.isWorkExpense || d.status === 'on_hold') return false;
+        if (!d.dueDate) return false;
+        const [dYear, dMonth] = d.dueDate.split('-').map(Number);
+        return dYear === year && dMonth === month;
+      })
+      .reduce((acc, d) => acc + d.remainingAmount, 0);
       
-    return { totalLimit, totalAvailable, totalDebt };
-  }, [cards, debts, selectedMonth]);
+    return { totalLimit, totalAvailable, totalDebt, totalWork: totalWorkExpensesCurrentMonth + totalWorkDebtsCurrentMonth };
+  }, [cards, debts, transactions, selectedMonth]);
 
   const cleanupDuplicates = () => {
     const seen = new Set<string>();
@@ -89,7 +106,7 @@ export default function App() {
   // Handlers
   const addTransaction = (t: Omit<Transaction, 'id'>, cardId?: string) => {
     const id = crypto.randomUUID();
-    const newTransaction: Transaction = { id, ...t };
+    const newTransaction: Transaction = { id, ...t, cardId };
 
     // Limit validation and subtraction for Credit Cards
     if (cardId && t.type === 'expense') {
@@ -220,9 +237,7 @@ export default function App() {
     const newPayment: DebtPayment = {
       id: crypto.randomUUID(),
       amount: paymentAmount,
-      date: new Date().toISOString().split('T')[0],
-      bankAccountId: 'payment', // Meta info
-      bankAccountName: 'Dinheiro'
+      date: new Date().toISOString().split('T')[0]
     };
 
     const remaining = Number((debt.remainingAmount - paymentAmount).toFixed(2));
@@ -248,6 +263,7 @@ export default function App() {
       category: 'Dívida',
       date: new Date().toISOString().split('T')[0],
       description: `Pagamento: ${debt.creditor} ${debt.installmentInfo ? `(${debt.installmentInfo.current}/${debt.installmentInfo.total})` : ''}`,
+      isWorkExpense: debt.isWorkExpense
     });
   };
 
@@ -301,7 +317,47 @@ export default function App() {
     }
   };
 
-  const deleteTransaction = (id: string) => setTransactions(transactions.filter(t => t.id !== id));
+  const deleteTransaction = (id: string) => {
+    const t = transactions.find(tr => tr.id === id);
+    if (!t) return;
+
+    // If it was a card transaction, restore limit and reduce invoice debt
+    if (t.cardId && t.type === 'expense') {
+      const card = cards.find(c => c.id === t.cardId);
+      if (card) {
+        // Restore available limit
+        setCards(cards.map(c => c.id === t.cardId ? { 
+          ...c, 
+          availableLimit: Number((c.availableLimit + t.amount).toFixed(2)) 
+        } : c));
+
+        // Find and reduce invoice debt
+        const [pYear, pMonth, pDay] = t.date.split('-').map(Number);
+        let tYear = pYear;
+        let tMonth = pMonth - 1;
+        if (pDay > card.closingDay) tMonth++;
+        const targetDate = new Date(tYear, tMonth, card.dueDay);
+        const monthYearLabel = targetDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+        const creditorName = `Fatura: ${card.name} (${monthYearLabel})`;
+
+        setDebts(currentDebts => currentDebts.map(d => {
+          if (d.creditor === creditorName && d.status !== 'paid') {
+            const newTotal = Number((d.totalAmount - t.amount).toFixed(2));
+            const newRemaining = Number((d.remainingAmount - t.amount).toFixed(2));
+            return {
+              ...d,
+              totalAmount: newTotal,
+              remainingAmount: newRemaining,
+              status: newRemaining <= 0 ? 'paid' : d.status
+            };
+          }
+          return d;
+        }));
+      }
+    }
+    
+    setTransactions(transactions.filter(tr => tr.id !== id));
+  };
   const updateTransaction = (id: string, updates: Partial<Transaction>) => setTransactions(transactions.map(t => t.id === id ? { ...t, ...updates } : t));
   const updateDebt = (id: string, updates: Partial<Debt>) => setDebts(debts.map(d => d.id === id ? { ...d, ...updates } : d));
   
@@ -610,9 +666,9 @@ export default function App() {
                   </div>
                 </div>
                 <div className="bg-white p-4 md:p-5 rounded-xl border border-[#E2E8F0] shadow-sm col-span-2 md:col-span-1">
-                  <p className="text-[9px] md:text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1 md:mb-2 text-center md:text-left">Limite Total</p>
+                  <p className="text-[9px] md:text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1 md:mb-2 text-center md:text-left">Total da Obra (Mês)</p>
                   <p className="text-xl md:text-3xl font-bold text-[#2563EB] text-center md:text-left">
-                    {formatCurrency(metrics.totalLimit)}
+                    {formatCurrency(metrics.totalWork)}
                   </p>
                 </div>
               </div>
@@ -891,10 +947,11 @@ export default function App() {
                     addTransaction({
                       description: fd.get('description') as string,
                       amount: Number(fd.get('amount')),
-                      type: fd.get('type') as 'income' | 'expense',
+                      type: 'expense',
                       category: fd.get('category') as string,
                       date: fd.get('date') as string,
-                    }, type === 'cc' ? id : undefined, type === 'ba' ? id : undefined);
+                      isWorkExpense: fd.get('isWorkExpense') === 'on'
+                    }, type === 'cc' ? id : undefined);
                   }} className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                     <div className="md:col-span-2">
                       <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Descrição</label>
@@ -906,10 +963,10 @@ export default function App() {
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Tipo</label>
-                      <select name="type" className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]">
-                        <option value="expense">Saída</option>
-                        <option value="income">Entrada</option>
-                      </select>
+                      <div className="flex items-center gap-2 bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg h-full">
+                        <input type="checkbox" name="isWorkExpense" id="isWorkExpense" className="w-4 h-4 accent-[#2563EB]" />
+                        <label htmlFor="isWorkExpense" className="text-xs font-bold text-[#1E293B]">Gasto da Obra</label>
+                      </div>
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Categoria</label>
@@ -962,6 +1019,9 @@ export default function App() {
                             onChange={(e) => updateTransaction(t.id, { description: e.target.value })}
                           />
                           <div className="flex items-center gap-2 mt-0.5">
+                            {t.isWorkExpense && (
+                              <span className="bg-[#DBEAFE] text-[#1E40AF] text-[8px] font-black uppercase px-1.5 py-0.5 rounded">Obra</span>
+                            )}
                             <input 
                               type="date"
                               className="text-[10px] text-[#94A3B8] font-bold uppercase bg-transparent outline-none"
@@ -1010,11 +1070,16 @@ export default function App() {
                     <div key={t.id} className="p-4 space-y-2">
                        <div className="flex justify-between items-start">
                         <div className="flex-1 min-w-0 pr-4">
-                          <input 
-                            className="font-bold text-sm bg-transparent outline-none focus:text-[#2563EB] w-full truncate"
-                            value={t.description}
-                            onChange={(e) => updateTransaction(t.id, { description: e.target.value })}
-                          />
+                          <div className="flex items-center gap-2">
+                            <input 
+                              className="font-bold text-sm bg-transparent outline-none focus:text-[#2563EB] w-full truncate"
+                              value={t.description}
+                              onChange={(e) => updateTransaction(t.id, { description: e.target.value })}
+                            />
+                            {t.isWorkExpense && (
+                              <span className="bg-[#DBEAFE] text-[#1E40AF] text-[8px] font-black uppercase px-1.5 py-0.5 rounded shrink-0">Obra</span>
+                            )}
+                          </div>
                           <div className="flex items-center gap-2 mt-1">
                             <input 
                               type="date"
@@ -1084,7 +1149,8 @@ export default function App() {
                       creditor: fd.get('creditor') as string,
                       totalAmount: Number(fd.get('amount')),
                       dueDate: fd.get('dueDate') as string,
-                      type
+                      type,
+                      isWorkExpense: fd.get('isWorkExpense') === 'on'
                     }, installments);
                   }} className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                     <div className="md:col-span-2">
@@ -1110,6 +1176,10 @@ export default function App() {
                     <div>
                       <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Qtd Parcelas (Apenas se Parcelada)</label>
                       <input name="installments" type="number" min="1" defaultValue="1" className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]" />
+                    </div>
+                    <div className="flex items-center gap-2 pt-4">
+                      <input type="checkbox" name="isWorkExpense" id="debtIsWorkExpense" className="w-4 h-4 accent-[#2563EB]" />
+                      <label htmlFor="debtIsWorkExpense" className="text-xs font-bold text-[#1E293B]">Gasto da Obra</label>
                     </div>
                     <div className="md:col-span-2 pt-2 flex gap-3">
                       <button type="submit" className="flex-1 bg-[#2563EB] text-white py-2.5 rounded-lg font-bold hover:bg-[#1D4ED8]">Salvar Lançamento</button>
@@ -1149,6 +1219,11 @@ export default function App() {
                               ) : (
                                 <h3 className="font-black text-xl text-[#1E293B] tracking-tight">{debt.creditor}</h3>
                               )}
+                              {debt.isWorkExpense && (
+                                <span className="bg-[#DBEAFE] text-[#1E40AF] text-[10px] font-black uppercase px-2 py-1 rounded-md">
+                                  Gasto da Obra
+                                </span>
+                              )}
                               {debt.installmentInfo && (
                                 <span className="text-xs text-[#64748B] font-bold bg-[#F1F5F9] px-2 py-1 rounded-md">
                                   {debt.installmentInfo.current}/{debt.installmentInfo.total}
@@ -1181,13 +1256,24 @@ export default function App() {
                               <div className="flex flex-col">
                                 <label className="text-[9px] font-black text-[#94A3B8] uppercase tracking-widest mb-1">Total Lançado</label>
                                 {isEditing ? (
-                                  <input 
-                                    id={`edit-total-${debt.id}`}
-                                    type="number"
-                                    className="text-sm font-bold text-[#1E293B] bg-[#F8FAFC] border border-[#E2E8F0] p-2 rounded-lg outline-none"
-                                    defaultValue={debt.totalAmount}
-                                    step="0.01"
-                                  />
+                                  <div className="space-y-2">
+                                    <input 
+                                      id={`edit-total-${debt.id}`}
+                                      type="number"
+                                      className="text-sm font-bold text-[#1E293B] bg-[#F8FAFC] border border-[#E2E8F0] p-2 rounded-lg outline-none w-full"
+                                      defaultValue={debt.totalAmount}
+                                      step="0.01"
+                                    />
+                                    <div className="flex items-center gap-2">
+                                      <input 
+                                        id={`edit-work-${debt.id}`}
+                                        type="checkbox"
+                                        className="w-3 h-3"
+                                        defaultChecked={debt.isWorkExpense}
+                                      />
+                                      <label htmlFor={`edit-work-${debt.id}`} className="text-[10px] font-bold text-[#64748B] uppercase">Gasto Obra</label>
+                                    </div>
+                                  </div>
                                 ) : (
                                   <p className="text-sm font-bold text-[#64748B]">{formatCurrency(debt.totalAmount)}</p>
                                 )}
@@ -1231,12 +1317,14 @@ export default function App() {
                                     const date = (document.getElementById(`edit-date-${debt.id}`) as HTMLInputElement).value;
                                     const total = Number((document.getElementById(`edit-total-${debt.id}`) as HTMLInputElement).value);
                                     const remaining = Number((document.getElementById(`edit-remaining-${debt.id}`) as HTMLInputElement).value);
+                                    const isWorkExpense = (document.getElementById(`edit-work-${debt.id}`) as HTMLInputElement).checked;
                                     
                                     const updates: Partial<Debt> = { 
                                       creditor, 
                                       dueDate: date, 
                                       totalAmount: total, 
-                                      remainingAmount: remaining, 
+                                      remainingAmount: remaining,
+                                      isWorkExpense,
                                       status: (remaining <= 0 ? 'paid' : 'pending') as 'paid' | 'pending' 
                                     };
                                     
@@ -1422,7 +1510,7 @@ export default function App() {
                   <div className="text-center py-20 bg-white rounded-2xl border border-dashed border-[#E2E8F0]">
                     <History className="w-12 h-12 text-[#CBD5E1] mx-auto mb-4" />
                     <p className="text-[#64748B] font-medium">Nenhuma dívida no plano de quitação.</p>
-                    <p className="text-xs text-[#94A3B8] mt-1">Coloque dívidas "Em Espera" na aba de Proventos para negociá-las aqui.</p>
+                    <p className="text-xs text-[#94A3B8] mt-1">Coloque dívidas "Em Espera" para negociá-las aqui.</p>
                   </div>
                 )}
               </div>
