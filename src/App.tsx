@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, ChangeEvent } from 'react';
-import { PlusCircle, CreditCard as CreditCardIcon, History, Trash2, Download, Upload } from 'lucide-react';
+import { PlusCircle, CreditCard as CreditCardIcon, History, Trash2, Download, Upload, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Transaction, Debt, CreditCard, DebtPayment } from './types';
 
@@ -419,6 +419,48 @@ export default function App() {
     if (!dateStr) return '';
     const [year, month, day] = dateStr.split('-').map(Number);
     return `${day.toString().padStart(2, '0')}/${month.toString().padStart(2, '0')}/${year}`;
+  };
+
+  const generateOverdueReport = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const overdueDebts = debts.filter(d => 
+      d.status === 'pending' && 
+      d.dueDate && 
+      d.dueDate < today
+    );
+
+    if (overdueDebts.length === 0) {
+      alert("Nenhuma conta vencida encontrada!");
+      return;
+    }
+
+    let reportText = "*RELATÓRIO DE CONTAS VENCIDAS*\n\n";
+    let totalOverdue = 0;
+
+    overdueDebts.sort((a, b) => a.dueDate.localeCompare(b.dueDate)).forEach(d => {
+      reportText += `📅 [${formatDate(d.dueDate)}] - *${d.creditor}*\n💰 Valor: ${formatCurrency(d.remainingAmount)}\n\n`;
+      totalOverdue += d.remainingAmount;
+    });
+
+    reportText += `--------------------------\n`;
+    reportText += `🔴 *VALOR TOTAL VENCIDO: ${formatCurrency(totalOverdue)}*`;
+
+    if (navigator.share) {
+      navigator.share({
+        title: 'Relatório de Contas Vencidas',
+        text: reportText,
+      }).catch(err => {
+        console.error("Erro ao compartilhar:", err);
+        // Fallback if share fails (e.g. user cancels or environment restriction)
+        navigator.clipboard.writeText(reportText).then(() => {
+          alert("Relatório copiado para a área de transferência!");
+        });
+      });
+    } else {
+      navigator.clipboard.writeText(reportText).then(() => {
+        alert("Relatório copiado para a área de transferência!");
+      });
+    }
   };
 
   const getNextMonthDate = (dateStr: string, monthsToAdd: number): string => {
@@ -1177,7 +1219,13 @@ export default function App() {
             >
               <div className="flex flex-col md:flex-row items-center justify-between gap-4">
                 <h2 className="text-xl font-bold text-[#1E293B]">Controle de Dívidas</h2>
-                <div className="flex gap-2 w-full md:w-auto">
+                <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                  <button 
+                    onClick={generateOverdueReport}
+                    className="flex-1 md:flex-none bg-[#E11D48] text-white px-4 py-2 rounded-lg flex items-center justify-center gap-2 text-xs font-bold uppercase hover:bg-[#BE123C] shadow-sm transform active:scale-95 transition-all"
+                  >
+                    <Share2 className="w-4 h-4" /> Relatório Vencidos
+                  </button>
                   <button 
                     onClick={cleanupDuplicates}
                     className="flex-1 md:flex-none px-4 py-2 border border-[#E2E8F0] text-[#64748B] rounded-lg text-xs font-bold uppercase hover:bg-[#F1F5F9] transition-all"
