@@ -181,16 +181,18 @@ export default function App() {
     
     if (d.type === 'installments' && installments > 1) {
       const groupId = crypto.randomUUID();
-      const installmentAmount = Number((d.totalAmount / installments).toFixed(2));
+      const baseAmount = Math.floor((d.totalAmount / installments) * 100) / 100;
+      const remainder = Number((d.totalAmount - (baseAmount * installments)).toFixed(2));
       
       for (let i = 1; i <= installments; i++) {
         const dueDate = getNextMonthDate(d.dueDate, i - 1);
+        const currentAmount = i === installments ? Number((baseAmount + remainder).toFixed(2)) : baseAmount;
         
         newDebts.push({
           ...d,
           id: crypto.randomUUID(),
-          totalAmount: installmentAmount,
-          remainingAmount: installmentAmount,
+          totalAmount: currentAmount,
+          remainingAmount: currentAmount,
           dueDate: dueDate,
           status: 'pending',
           payments: [],
@@ -756,6 +758,7 @@ export default function App() {
                                 <input 
                                   type="number"
                                   step="0.01"
+                                  inputMode="decimal"
                                   className="w-24 text-right font-black text-sm text-[#DC2626] bg-transparent border-b border-transparent focus:border-[#FEE2E2] focus:bg-white outline-none px-1 rounded"
                                   defaultValue={debt.remainingAmount}
                                   onBlur={(e) => {
@@ -780,6 +783,7 @@ export default function App() {
                                       id={`desktop-pay-input-${debt.id}`}
                                       type="number"
                                       step="0.01"
+                                      inputMode="decimal"
                                       className="w-20 text-xs font-bold text-[#2563EB] bg-[#F1F5F9] border border-[#E2E8F0] p-1.5 rounded outline-none"
                                       defaultValue={debt.remainingAmount}
                                     />
@@ -790,6 +794,7 @@ export default function App() {
                                       id={`desktop-pay-interest-${debt.id}`}
                                       type="number"
                                       step="0.01"
+                                      inputMode="decimal"
                                       placeholder="0,00"
                                       className="w-16 text-xs font-bold text-[#E11D48] bg-[#F1F5F9] border border-[#E2E8F0] p-1.5 rounded outline-none"
                                     />
@@ -845,6 +850,8 @@ export default function App() {
                                   <input
                                     id={`dashboard-pay-input-${debt.id}`}
                                     type="number"
+                                    step="0.01"
+                                    inputMode="decimal"
                                     defaultValue={debt.remainingAmount}
                                     className="w-full bg-white border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-black text-[#2563EB] outline-none"
                                   />
@@ -854,6 +861,8 @@ export default function App() {
                                   <input
                                     id={`dashboard-pay-interest-${debt.id}`}
                                     type="number"
+                                    step="0.01"
+                                    inputMode="decimal"
                                     placeholder="0,00"
                                     className="w-full bg-white border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-black text-[#E11D48] outline-none"
                                   />
@@ -1059,7 +1068,7 @@ export default function App() {
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Valor (R$)</label>
-                      <input name="amount" type="number" step="0.01" required className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]" />
+                      <input name="amount" type="number" step="0.01" inputMode="decimal" required className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]" />
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Tipo</label>
@@ -1144,6 +1153,7 @@ export default function App() {
                             <input 
                               type="number"
                               step="0.01"
+                              inputMode="decimal"
                               className={`font-bold text-sm bg-transparent outline-none text-right w-24 ${t.type === 'income' ? 'text-[#16A34A]' : 'text-[#DC2626]'}`}
                               value={t.amount}
                               onChange={(e) => updateTransaction(t.id, { amount: Number(e.target.value) })}
@@ -1265,7 +1275,7 @@ export default function App() {
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Valor {activeTab === 'debts' ? 'Total' : ''} (R$)</label>
-                      <input name="amount" type="number" step="0.01" required className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]" />
+                      <input name="amount" type="number" step="0.01" inputMode="decimal" required className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]" />
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Tipo de Lançamento</label>
@@ -1360,43 +1370,45 @@ export default function App() {
                                 )}
                               </div>
                               <div className="flex flex-col">
-                                <label className="text-[9px] font-black text-[#94A3B8] uppercase tracking-widest mb-1">Total Lançado</label>
-                                {isEditing ? (
-                                  <div className="space-y-2">
-                                    <input 
-                                      id={`edit-total-${debt.id}`}
-                                      type="number"
-                                      className="text-sm font-bold text-[#1E293B] bg-[#F8FAFC] border border-[#E2E8F0] p-2 rounded-lg outline-none w-full"
-                                      defaultValue={debt.totalAmount}
-                                      step="0.01"
-                                    />
-                                    <div className="flex items-center gap-2">
-                                      <input 
-                                        id={`edit-work-${debt.id}`}
-                                        type="checkbox"
-                                        className="w-3 h-3"
-                                        defaultChecked={debt.isWorkExpense}
-                                      />
-                                      <label htmlFor={`edit-work-${debt.id}`} className="text-[10px] font-bold text-[#64748B] uppercase">Gasto Obra</label>
-                                    </div>
-                                  </div>
+                                {debt.installmentInfo ? (
+                                  <>
+                                    <label className="text-[9px] font-black text-[#94A3B8] uppercase tracking-widest mb-1">Total da Compra (Soma)</label>
+                                    <p className="text-sm font-black text-[#2563EB]">
+                                      {formatCurrency(debts.filter(d => d.installmentInfo?.groupId === debt.installmentInfo?.groupId).reduce((acc, curr) => acc + curr.totalAmount, 0))}
+                                    </p>
+                                  </>
                                 ) : (
-                                  <p className="text-sm font-bold text-[#64748B]">{formatCurrency(debt.totalAmount)}</p>
+                                  <>
+                                    <label className="text-[9px] font-black text-[#94A3B8] uppercase tracking-widest mb-1">Total Lançado</label>
+                                    <p className="text-sm font-bold text-[#64748B]">{formatCurrency(debt.totalAmount)}</p>
+                                  </>
                                 )}
                               </div>
                             </div>
                           </div>
 
                           <div className="flex flex-col md:items-end gap-2">
-                            <label className="text-[10px] font-black text-[#94A3B8] uppercase tracking-widest">Saldo Devedor</label>
+                            <label className="text-[10px] font-black text-[#94A3B8] uppercase tracking-widest">{isEditing ? 'Original da Parcela' : 'Saldo Devedor'}</label>
                             {isEditing ? (
-                              <input 
-                                id={`edit-remaining-${debt.id}`}
-                                type="number"
-                                className="text-3xl font-black text-[#DC2626] bg-[#F8FAFC] border border-[#E2E8F0] p-3 rounded-xl outline-none text-right w-full md:w-36 focus:ring-4 focus:ring-[#DC2626]/5"
-                                defaultValue={debt.remainingAmount}
-                                step="0.01"
-                              />
+                              <div className="space-y-2 w-full md:w-36">
+                                <input 
+                                  id={`edit-total-${debt.id}`}
+                                  type="number"
+                                  step="0.01"
+                                  inputMode="decimal"
+                                  className="text-3xl font-black text-[#DC2626] bg-[#F8FAFC] border border-[#E2E8F0] p-3 rounded-xl outline-none text-right w-full focus:ring-4 focus:ring-[#DC2626]/5"
+                                  defaultValue={debt.totalAmount}
+                                />
+                                <div className="flex items-center gap-2 justify-end">
+                                  <input 
+                                    id={`edit-work-${debt.id}`}
+                                    type="checkbox"
+                                    className="w-3 h-3"
+                                    defaultChecked={debt.isWorkExpense}
+                                  />
+                                  <label htmlFor={`edit-work-${debt.id}`} className="text-[10px] font-bold text-[#64748B] uppercase">Obra</label>
+                                </div>
+                              </div>
                             ) : (
                               <p className={`text-4xl font-black ${debt.status === 'paid' ? 'text-[#16A34A]' : 'text-[#DC2626]'} tracking-tighter`}>
                                 {formatCurrency(debt.remainingAmount)}
@@ -1404,6 +1416,20 @@ export default function App() {
                             )}
                           </div>
                         </div>
+
+                        {isEditing && (
+                          <div className="bg-[#FFFBEB] p-3 rounded-xl border border-[#FEF3C7] mb-2">
+                            <p className="text-[10px] font-bold text-[#92400E] uppercase text-center">Saldo Atual Restante (Pagar agora)</p>
+                            <input 
+                              id={`edit-remaining-${debt.id}`}
+                              type="number"
+                              step="0.01"
+                              inputMode="decimal"
+                              className="w-full text-center text-xl font-black text-[#92400E] bg-transparent outline-none"
+                              defaultValue={debt.remainingAmount}
+                            />
+                          </div>
+                        )}
 
                         {/* Actions Row */}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-6 border-t border-[#F1F5F9]">
@@ -1519,6 +1545,8 @@ export default function App() {
                                   <input
                                     id={`manage-pay-input-${debt.id}`}
                                     type="number"
+                                    step="0.01"
+                                    inputMode="decimal"
                                     defaultValue={debt.remainingAmount}
                                     className="flex-1 sm:w-28 bg-white border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-black text-[#2563EB] outline-none"
                                   />
@@ -1528,6 +1556,8 @@ export default function App() {
                                   <input
                                     id={`manage-pay-interest-${debt.id}`}
                                     type="number"
+                                    step="0.01"
+                                    inputMode="decimal"
                                     placeholder="0,00"
                                     className="flex-1 sm:w-20 bg-white border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-black text-[#E11D48] outline-none"
                                   />
