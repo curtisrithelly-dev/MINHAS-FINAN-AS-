@@ -307,6 +307,38 @@ export default function App() {
     const target = debts.find(d => d.id === id);
     if (!target) return;
 
+    if (updates.totalAmount !== undefined && updates.totalAmount !== target.totalAmount && target.installmentInfo) {
+      const gid = target.installmentInfo.groupId;
+      const groupDebts = debts.filter(d => d.installmentInfo?.groupId === gid).sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+      
+      const previousTotal = groupDebts.reduce((acc, d) => acc + d.totalAmount, 0);
+      const otherDebts = groupDebts.filter(d => d.id !== id);
+      
+      if (otherDebts.length > 0) {
+        const remainingToDistribute = Number((previousTotal - updates.totalAmount).toFixed(2));
+        const count = otherDebts.length;
+        const baseAmount = Math.max(0, Math.floor((remainingToDistribute / count) * 100) / 100);
+        const remainder = Number((remainingToDistribute - (baseAmount * count)).toFixed(2));
+
+        setDebts(currentDebts => currentDebts.map(d => {
+          if (d.id === id) {
+            return { ...d, ...updates };
+          }
+          if (d.installmentInfo?.groupId === gid) {
+            const indexInOthers = otherDebts.findIndex(od => od.id === d.id);
+            if (indexInOthers !== -1) {
+              const isLast = indexInOthers === otherDebts.length - 1;
+              const newAmount = isLast ? Number((baseAmount + remainder).toFixed(2)) : baseAmount;
+              const newRemaining = d.status === 'paid' ? 0 : newAmount;
+              return { ...d, totalAmount: newAmount, remainingAmount: newRemaining };
+            }
+          }
+          return d;
+        }));
+        return;
+      }
+    }
+
     if (applyToFuture && (target.installmentInfo || target.recurringGroupId)) {
       const gid = target.installmentInfo?.groupId || target.recurringGroupId;
       const targetDate = target.dueDate;
