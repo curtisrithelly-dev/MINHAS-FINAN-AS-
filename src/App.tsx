@@ -35,6 +35,7 @@ export default function App() {
   const [editingDebtId, setEditingDebtId] = useState<string | null>(null);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [quickAddTab, setQuickAddTab] = useState<'transaction' | 'debt'>('transaction');
+  const [debtSubTab, setDebtSubTab] = useState<'current' | 'old'>('current');
 
   // Sync to localStorage
   useEffect(() => {
@@ -58,6 +59,7 @@ export default function App() {
     const totalDebt = debts
       .filter(d => {
         if (d.status === 'on_hold') return false;
+        if (d.category === 'A Negociar') return false;
         if (!d.dueDate) return false;
         const [dYear, dMonth] = d.dueDate.split('-').map(Number);
         return dYear === year && dMonth === month;
@@ -74,7 +76,7 @@ export default function App() {
 
     const totalWorkDebtsCurrentMonth = debts
       .filter(d => {
-        if (!d.isWorkExpense || d.status === 'on_hold') return false;
+        if (!d.isWorkExpense || d.status === 'on_hold' || d.category === 'A Negociar') return false;
         if (!d.dueDate) return false;
         const [dYear, dMonth] = d.dueDate.split('-').map(Number);
         return dYear === year && dMonth === month;
@@ -250,7 +252,7 @@ export default function App() {
     const remaining = Number((debt.remainingAmount - paymentAmount).toFixed(2));
     
     // Restore card limit if paying a card invoice
-    if (debt.cardId) {
+    if (debt.cardId && debt.category !== 'A Negociar') {
       setCards(cards => cards.map(c => c.id === debt.cardId ? { 
         ...c, 
         availableLimit: Number((c.availableLimit + totalPaid).toFixed(2)) 
@@ -461,6 +463,7 @@ export default function App() {
     const today = new Date().toISOString().split('T')[0];
     const overdueDebts = debts.filter(d => 
       d.status === 'pending' && 
+      d.category !== 'A Negociar' &&
       d.dueDate && 
       d.dueDate < today
     );
@@ -764,7 +767,7 @@ export default function App() {
                       </thead>
                       <tbody className="divide-y divide-[#F1F5F9]">
                         {debts.filter(d => {
-                          if (d.status === 'paid' || d.status === 'on_hold') return false;
+                          if (d.status === 'paid' || d.status === 'on_hold' || d.category === 'A Negociar') return false;
                           const [y, m] = d.dueDate.split('-').map(Number);
                           const [selY, selM] = selectedMonth.split('-').map(Number);
                           return y === selY && m === selM;
@@ -848,7 +851,7 @@ export default function App() {
                     {/* Mobile Card List */}
                     <div className="md:hidden divide-y divide-[#F1F5F9]">
                       {debts.filter(d => {
-                        if (d.status === 'paid' || d.status === 'on_hold') return false;
+                        if (d.status === 'paid' || d.status === 'on_hold' || d.category === 'A Negociar') return false;
                         const [y, m] = d.dueDate.split('-').map(Number);
                         const [selY, selM] = selectedMonth.split('-').map(Number);
                         return y === selY && m === selM;
@@ -910,7 +913,12 @@ export default function App() {
                       ))}
                     </div>
 
-                    {debts.filter(d => d.status !== 'paid' && d.status !== 'on_hold').length === 0 && (
+                    {debts.filter(d => {
+                      if (d.status === 'paid' || d.status === 'on_hold' || d.category === 'A Negociar') return false;
+                      const [y, m] = d.dueDate.split('-').map(Number);
+                      const [selY, selM] = selectedMonth.split('-').map(Number);
+                      return y === selY && m === selM;
+                    }).length === 0 && (
                       <div className="px-5 py-12 text-center text-[#94A3B8] font-medium text-xs italic">
                         Não há pagamentos pendentes selecionados.
                       </div>
@@ -1275,6 +1283,40 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Sub-tabs segment control for debts */}
+              <div className="flex gap-1 bg-slate-100 p-1 rounded-2xl mb-4 shadow-inner border border-slate-200">
+                <button
+                  onClick={() => setDebtSubTab('current')}
+                  className={`flex-1 py-3 px-4 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex items-center justify-center gap-2 cursor-pointer ${debtSubTab === 'current' ? 'bg-white text-[#2563EB] shadow-xs font-black' : 'text-[#64748B] hover:text-[#1E293B]'}`}
+                >
+                  Contas do Mês
+                </button>
+                <button
+                  onClick={() => setDebtSubTab('old')}
+                  className={`flex-1 py-3 px-4 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex items-center justify-center gap-2 cursor-pointer ${debtSubTab === 'old' ? 'bg-white text-[#2563EB] shadow-xs font-black' : 'text-[#64748B] hover:text-[#1E293B]'}`}
+                >
+                  Dívidas Antigas ('A Negociar')
+                  {debts.filter(d => d.category === 'A Negociar' && d.status !== 'paid').length > 0 && (
+                    <span className="bg-[#E11D48] text-white text-[9px] font-black px-2 py-0.5 rounded-full shrink-0">
+                      {debts.filter(d => d.category === 'A Negociar' && d.status !== 'paid').length}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {/* Old debts top banner summary */}
+              {debtSubTab === 'old' && (
+                <div className="bg-[#FFF1F2] border border-[#FEE2E2] p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs">
+                  <div>
+                    <h4 className="font-black text-sm text-[#E11D48] uppercase tracking-wider">Total de Dívidas Antigas a Negociar</h4>
+                    <p className="text-xs text-[#64748B] mt-0.5 font-medium">Estes lançamentos estão isolados do seu limite de cartão de crédito e do orçamento mensal regular.</p>
+                  </div>
+                  <p className="text-3xl font-black text-[#E11D48] tracking-tight">
+                    {formatCurrency(debts.filter(d => d.category === 'A Negociar' && d.status !== 'paid').reduce((sum, d) => sum + d.remainingAmount, 0))}
+                  </p>
+                </div>
+              )}
+
               {isAddingDebt && (
                 <div className="bg-white p-6 rounded-xl border border-[#E2E8F0] shadow-md">
                   <h3 className="font-bold mb-4 text-[#1E293B]">Cadastrar Nova Dívida / Conta</h3>
@@ -1289,6 +1331,7 @@ export default function App() {
                       totalAmount: Number(fd.get('amount')),
                       dueDate: fd.get('dueDate') as string,
                       type,
+                      category: fd.get('category') as string,
                       isWorkExpense: fd.get('isWorkExpense') === 'on'
                     }, installments);
                   }} className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
@@ -1306,6 +1349,16 @@ export default function App() {
                         <option value="unique">Única (Pagamento à vista)</option>
                         <option value="fixed">Fixa (Mensal Recorrente)</option>
                         <option value="installments">Parcelada</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Categoria de Dívida</label>
+                      <select name="category" required defaultValue={debtSubTab === 'old' ? 'A Negociar' : 'Dívida Geral'} className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]">
+                        <option value="Dívida Geral">Dívida Geral</option>
+                        <option value="A Negociar">A Negociar (Dívidas Antigas)</option>
+                        <option value="Serviços fundamentais">Serviços fundamentais (Água, Luz...)</option>
+                        <option value="Assinaturas">Assinaturas / Lazer</option>
+                        <option value="Outros">Outros</option>
                       </select>
                     </div>
                     <div>
@@ -1331,11 +1384,23 @@ export default function App() {
               <div className="grid grid-cols-1 gap-4">
                 {debts.filter(d => {
                   if (d.status === 'on_hold') return false;
-                  if (!d.dueDate) return false;
-                  const [y, m] = d.dueDate.split('-').map(Number);
-                  const [selY, selM] = selectedMonth.split('-').map(Number);
-                  return y === selY && m === selM;
-                }).sort((a,b) => a.dueDate.localeCompare(b.dueDate)).map((debt) => {
+                  if (debtSubTab === 'current') {
+                    if (d.category === 'A Negociar') return false;
+                    if (!d.dueDate) return false;
+                    const [y, m] = d.dueDate.split('-').map(Number);
+                    const [selY, selM] = selectedMonth.split('-').map(Number);
+                    return y === selY && m === selM;
+                  } else {
+                    return d.category === 'A Negociar';
+                  }
+                }).sort((a,b) => {
+                  if (debtSubTab === 'old') {
+                    if (a.status !== b.status) {
+                      return a.status === 'paid' ? 1 : -1;
+                    }
+                  }
+                  return (a.dueDate || '').localeCompare(b.dueDate || '');
+                }).map((debt) => {
                   const isEditing = editingDebtId === debt.id;
                   
                   return (
@@ -1361,6 +1426,11 @@ export default function App() {
                               {debt.isWorkExpense && (
                                 <span className="bg-[#DBEAFE] text-[#1E40AF] text-[10px] font-black uppercase px-2 py-1 rounded-md">
                                   Gasto da Obra
+                                </span>
+                              )}
+                              {debt.category && (
+                                <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-black uppercase px-2 py-1 rounded-md">
+                                  {debt.category}
                                 </span>
                               )}
                               {debt.installmentInfo && (
@@ -1441,16 +1511,32 @@ export default function App() {
                         </div>
 
                         {isEditing && (
-                          <div className="bg-[#FFFBEB] p-3 rounded-xl border border-[#FEF3C7] mb-2">
-                            <p className="text-[10px] font-bold text-[#92400E] uppercase text-center">Saldo Atual Restante (Pagar agora)</p>
-                            <input 
-                              id={`edit-remaining-${debt.id}`}
-                              type="number"
-                              step="0.01"
-                              inputMode="decimal"
-                              className="w-full text-center text-xl font-black text-[#92400E] bg-transparent outline-none"
-                              defaultValue={debt.remainingAmount}
-                            />
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-2">
+                            <div className="bg-[#FFFBEB] p-3 rounded-xl border border-[#FEF3C7]">
+                              <p className="text-[10px] font-bold text-[#92400E] uppercase text-center mb-1">Saldo Atual Restante (Pagar agora)</p>
+                              <input 
+                                id={`edit-remaining-${debt.id}`}
+                                type="number"
+                                step="0.01"
+                                inputMode="decimal"
+                                className="w-full text-center text-xl font-black text-[#92400E] bg-transparent outline-none"
+                                defaultValue={debt.remainingAmount}
+                              />
+                            </div>
+                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                              <p className="text-[10px] font-bold text-slate-500 uppercase text-center mb-1">Categoria da Dívida</p>
+                              <select 
+                                id={`edit-category-${debt.id}`}
+                                className="w-full text-sm font-bold text-slate-800 bg-transparent border-none outline-none text-center cursor-pointer mt-1"
+                                defaultValue={debt.category || 'Dívida Geral'}
+                              >
+                                <option value="Dívida Geral">Dívida Geral</option>
+                                <option value="A Negociar">A Negociar</option>
+                                <option value="Serviços fundamentais">Serviços fundamentais</option>
+                                <option value="Assinaturas">Assinaturas</option>
+                                <option value="Outros">Outros</option>
+                              </select>
+                            </div>
                           </div>
                         )}
 
@@ -1473,6 +1559,7 @@ export default function App() {
                                     const total = Number((document.getElementById(`edit-total-${debt.id}`) as HTMLInputElement).value);
                                     const remaining = Number((document.getElementById(`edit-remaining-${debt.id}`) as HTMLInputElement).value);
                                     const isWorkExpense = (document.getElementById(`edit-work-${debt.id}`) as HTMLInputElement).checked;
+                                    const category = (document.getElementById(`edit-category-${debt.id}`) as HTMLSelectElement).value;
                                     
                                     const updates: Partial<Debt> = { 
                                       creditor, 
@@ -1480,6 +1567,7 @@ export default function App() {
                                       totalAmount: total, 
                                       remainingAmount: remaining,
                                       isWorkExpense,
+                                      category,
                                       status: (remaining <= 0 ? 'paid' : 'pending') as 'paid' | 'pending' 
                                     };
                                     
@@ -1954,6 +2042,7 @@ export default function App() {
                       totalAmount: Number(fd.get('amount')),
                       dueDate: fd.get('dueDate') as string,
                       type,
+                      category: fd.get('category') as string,
                       isWorkExpense: fd.get('isWorkExpense') === 'on'
                     }, installments);
                     setShowQuickAdd(false);
@@ -1984,6 +2073,19 @@ export default function App() {
                         <input name="dueDate" type="date" required defaultValue={new Date().toISOString().split('T')[0]} className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]" />
                       </div>
                       <div>
+                        <label className="text-[10px] font-black text-[#94A3B8] uppercase block mb-1">Categoria</label>
+                        <select name="category" required defaultValue={debtSubTab === 'old' ? 'A Negociar' : 'Dívida Geral'} className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]">
+                          <option value="Dívida Geral">Dívida Geral</option>
+                          <option value="A Negociar">A Negociar (Dívidas Antigas)</option>
+                          <option value="Serviços fundamentais">Serviços fundamentais</option>
+                          <option value="Assinaturas">Assinaturas</option>
+                          <option value="Outros">Outros</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="col-span-2">
                         <label className="text-[10px] font-black text-[#94A3B8] uppercase block mb-1">Qtd Parcelas (Se Parcelado)</label>
                         <input name="installments" type="number" min="1" defaultValue="1" className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]" />
                       </div>
