@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, ChangeEvent } from 'react';
-import { PlusCircle, CreditCard as CreditCardIcon, History, Trash2, Download, Upload, Share2 } from 'lucide-react';
+import { PlusCircle, CreditCard as CreditCardIcon, History, Trash2, Download, Upload, Share2, Home, Receipt, Hammer, Plus, X, ListTodo, Wallet, ChevronRight, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Transaction, Debt, CreditCard, DebtPayment } from './types';
 
@@ -33,6 +33,8 @@ export default function App() {
   const [isAddingDebt, setIsAddingDebt] = useState(false);
   const [showCardManager, setShowCardManager] = useState(false);
   const [editingDebtId, setEditingDebtId] = useState<string | null>(null);
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [quickAddTab, setQuickAddTab] = useState<'transaction' | 'debt'>('transaction');
 
   // Sync to localStorage
   useEffect(() => {
@@ -516,86 +518,75 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#1E293B] font-sans">
-        <header className="bg-white border-b border-[#E2E8F0] sticky top-0 z-30">
-        <div className="max-w-6xl mx-auto px-4 md:px-6 h-auto md:h-16 flex flex-col md:flex-row items-center justify-between py-4 md:py-0 gap-4">
-          <div className="flex items-center justify-between w-full md:w-auto">
-            <div className="font-bold text-xl tracking-tight text-[#2563EB]">
-              Finanza<span className="text-[#64748B] ml-1">Curti</span>
-            </div>
-            <div className="flex items-center gap-2 md:hidden">
-              <button 
-                onClick={() => setShowCardManager(!showCardManager)}
-                className="p-2 text-[#64748B] hover:text-[#2563EB] transition-colors"
-                title="Gerenciar Cartões"
-              >
-                <CreditCardIcon className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-          <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
-            <div className="hidden md:flex items-center gap-2">
-              <div className="flex items-center gap-2 px-3 py-1 bg-[#F1F5F9] rounded-xl border border-[#E2E8F0]">
+    <div className="min-h-screen bg-[#F8FAFC] text-[#1E293B] font-sans pb-32">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+        {/* Modern Mobile Greeting Header */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 border-b border-[#E2E8F0] pb-6">
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-black text-[#1E293B] tracking-tight">Olá, Curtis 👋</h1>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white rounded-xl border border-[#E2E8F0] shadow-sm shrink-0">
                 <button 
                   onClick={exportBackup}
-                  className="p-1.5 text-[#64748B] hover:text-[#2563EB] transition-colors"
+                  className="p-1 text-[#64748B] hover:text-[#2563EB] transition-colors"
                   title="Exportar Backup"
                 >
-                  <Download className="w-4 h-4" />
+                  <Download className="w-3.5 h-3.5" />
                 </button>
                 <div className="w-[1px] h-3 bg-[#CBD5E1]"></div>
-                <label className="p-1.5 text-[#64748B] hover:text-[#2563EB] transition-colors cursor-pointer" title="Importar Backup">
-                  <Upload className="w-4 h-4" />
+                <label className="p-1 text-[#64748B] hover:text-[#2563EB] transition-colors cursor-pointer" title="Importar Backup">
+                  <Upload className="w-3.5 h-3.5" />
                   <input type="file" accept=".json" onChange={importBackup} className="hidden" />
                 </label>
               </div>
             </div>
-            
-            <nav className="flex gap-1 bg-[#F1F5F9] p-1 rounded-xl w-full md:w-auto overflow-x-auto no-scrollbar">
-              <div className="flex gap-1 min-w-max">
-                {(['dashboard', 'transactions', 'debts', 'negotiations', 'cards', 'work-summary'] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    id={`tab-${tab}`}
-                    onClick={() => setActiveTab(tab)}
-                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap min-h-[40px] flex items-center justify-center ${
-                      activeTab === tab ? 'bg-white text-[#2563EB] shadow-sm' : 'text-[#64748B] hover:text-[#1E293B]'
-                    }`}
-                  >
-                    {tab === 'negotiations' ? 'Negociações' :
-                     tab === 'work-summary' ? 'Resumo da Obra' :
-                     tab.charAt(0).toUpperCase() + tab.slice(1)}
-                  </button>
-                ))}
-              </div>
-            </nav>
-
+            <p className="text-xs text-[#64748B] font-medium mt-0.5">Visão unificada das suas finanças e obras.</p>
+          </div>
+          
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
             <button 
               onClick={() => setShowCardManager(!showCardManager)}
-              className="hidden md:block p-2 text-[#64748B] hover:text-[#2563EB] transition-colors"
+              className="px-4 py-2 bg-white hover:bg-slate-50 border border-[#E2E8F0] text-[#1E293B] rounded-xl text-xs font-bold uppercase transition-all shadow-sm flex items-center justify-center gap-2 shrink-0"
               title="Gerenciar Cartões"
             >
-              <CreditCardIcon className="w-5 h-5" />
+              <CreditCardIcon className="w-4 h-4 text-[#2563EB]" /> Cartões
             </button>
-
-            {/* Mobile Backup Actions - moved to footer or a menu for better UX, but keeping here as small icons for now */}
-            <div className="flex md:hidden items-center gap-4 w-full justify-center pb-2 border-t border-[#F1F5F9] pt-2 mt-1">
-               <button 
-                  onClick={exportBackup}
-                  className="flex items-center gap-2 text-[10px] font-bold text-[#64748B] uppercase"
-                >
-                  <Download className="w-3 h-3" /> Exportar
-                </button>
-                <label className="flex items-center gap-2 text-[10px] font-bold text-[#64748B] uppercase cursor-pointer">
-                  <Upload className="w-3 h-3" /> Importar
-                  <input type="file" accept=".json" onChange={importBackup} className="hidden" />
-                </label>
+            <div className="bg-[#FFF1F2] border border-[#FEE2E2] px-4 py-3 rounded-2xl flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto">
+              <span className="text-[10px] font-black text-[#E11D48] uppercase tracking-wider">Total Devido no Mês</span>
+              <p className="text-xl font-black text-[#E11D48]">{formatCurrency(metrics.totalDebt)}</p>
             </div>
           </div>
         </div>
-      </header>
 
-      <main className="max-w-6xl mx-auto px-4 md:px-6 py-4 md:py-8">
+        {/* Sub-tabs segment control for Início sub-tabs */}
+        {['dashboard', 'transactions', 'cards', 'negotiations'].includes(activeTab) && (
+          <div className="flex gap-1 overflow-x-auto no-scrollbar bg-slate-100 p-1 rounded-2xl mb-6 shadow-inner border border-slate-200 shrink-0">
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex items-center justify-center ${activeTab === 'dashboard' ? 'bg-white text-[#2563EB] shadow-xs font-black' : 'text-[#64748B] hover:text-[#1E293B]'}`}
+            >
+              Visão Geral
+            </button>
+            <button
+              onClick={() => setActiveTab('transactions')}
+              className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex items-center justify-center ${activeTab === 'transactions' ? 'bg-white text-[#2563EB] shadow-xs font-black' : 'text-[#64748B] hover:text-[#1E293B]'}`}
+            >
+              Extrato
+            </button>
+            <button
+              onClick={() => setActiveTab('cards')}
+              className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex items-center justify-center ${activeTab === 'cards' ? 'bg-white text-[#2563EB] shadow-xs font-black' : 'text-[#64748B] hover:text-[#1E293B]'}`}
+            >
+              Cartões
+            </button>
+            <button
+              onClick={() => setActiveTab('negotiations')}
+              className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex items-center justify-center ${activeTab === 'negotiations' ? 'bg-white text-[#2563EB] shadow-xs font-black' : 'text-[#64748B] hover:text-[#1E293B]'}`}
+            >
+              Espera / Acordos
+            </button>
+          </div>
+        )}
         {/* Month Selector */}
         <div className="flex items-center justify-between mb-6 bg-white p-3 rounded-2xl border border-[#E2E8F0] shadow-sm">
           <button 
@@ -732,13 +723,13 @@ export default function App() {
                 <div className="bg-white p-4 md:p-5 rounded-xl border border-[#E2E8F0] shadow-sm flex flex-col justify-center gap-2 col-span-2 md:col-span-1">
                   <div className="grid grid-cols-2 md:grid-cols-1 gap-2">
                     <button 
-                      onClick={() => { setActiveTab('transactions'); setIsAddingTransaction(true); }}
+                      onClick={() => { setQuickAddTab('transaction'); setShowQuickAdd(true); }}
                       className="w-full bg-[#2563EB] text-white py-2.5 rounded-lg text-[9px] md:text-[10px] font-bold uppercase tracking-wide hover:bg-[#1D4ED8]"
                     >
                       + Novo Gasto
                     </button>
                     <button 
-                      onClick={() => { setActiveTab('debts'); setIsAddingDebt(true); }}
+                      onClick={() => { setQuickAddTab('debt'); setShowQuickAdd(true); }}
                       className="w-full bg-[#1E293B] text-white py-2.5 rounded-lg text-[9px] md:text-[10px] font-bold uppercase tracking-wide hover:bg-black"
                     >
                       + Nova Dívida
@@ -1069,10 +1060,10 @@ export default function App() {
                 <h2 className="text-xl font-bold text-[#1E293B]">Transações</h2>
                 <button
                   id="btn-add-transaction-view"
-                  onClick={() => setIsAddingTransaction(!isAddingTransaction)}
+                  onClick={() => { setQuickAddTab('transaction'); setShowQuickAdd(true); }}
                   className="bg-[#2563EB] text-white px-4 py-2 rounded-lg flex items-center gap-2 text-xs font-bold hover:bg-[#1D4ED8]"
                 >
-                  <PlusCircle className="w-4 h-4" /> {isAddingTransaction ? 'Fechar' : 'Nova Transação'}
+                  <PlusCircle className="w-4 h-4" /> Nova Transação
                 </button>
               </div>
 
@@ -1276,10 +1267,10 @@ export default function App() {
                   </button>
                   <button
                     id="btn-add-debt-view"
-                    onClick={() => setIsAddingDebt(!isAddingDebt)}
+                    onClick={() => { setQuickAddTab('debt'); setShowQuickAdd(true); }}
                     className="flex-1 md:flex-none bg-[#2563EB] text-white px-4 py-2 rounded-lg flex items-center justify-center gap-2 text-xs font-bold hover:bg-[#1D4ED8]"
                   >
-                    <PlusCircle className="w-4 h-4" /> {isAddingDebt ? 'Fechar' : 'Nova Dívida'}
+                    <PlusCircle className="w-4 h-4" /> Nova Dívida
                   </button>
                 </div>
               </div>
@@ -1789,15 +1780,230 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      <footer className="max-w-6xl mx-auto px-6 py-12 border-t border-[#E2E8F0] mt-12 mb-8">
-        <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-[0.2em]">FinanzaFlow Gestor © 2026</p>
-          <div className="flex gap-4">
-            <span className="text-[10px] font-bold text-[#CBD5E1] uppercase tracking-widest">Premium Service</span>
-            <span className="text-[10px] font-bold text-[#CBD5E1] uppercase tracking-widest">Calculated Integrity</span>
-          </div>
-        </div>
+      <footer className="max-w-3xl mx-auto px-6 py-6 border-t border-[#E2E8F0] mt-12 mb-28 text-center">
+        <p className="text-[9px] font-bold text-[#94A3B8] uppercase tracking-widest block font-mono">Finanza Gestor © 2026</p>
       </footer>
+
+      {/* Floating Action Button (FAB) */}
+      <button
+        onClick={() => {
+          setQuickAddTab('transaction');
+          setShowQuickAdd(true);
+        }}
+        className="fixed bottom-24 right-6 z-30 w-14 h-14 rounded-full bg-[#2563EB] text-white shadow-xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all text-2xl font-bold border border-[#3B82F6] cursor-pointer"
+        title="Gasto Rápido"
+      >
+        <Plus className="w-6 h-6 text-white" />
+      </button>
+
+      {/* Bottom Navigation Bar */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#E2E8F0] shadow-2xl py-2 px-4 flex justify-around items-center">
+        <div className="w-full max-w-xl mx-auto flex justify-around items-center">
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`flex flex-col items-center gap-1 py-1 text-center flex-1 transition-all cursor-pointer ${
+              ['dashboard', 'transactions', 'cards', 'negotiations'].includes(activeTab)
+                ? 'text-[#2563EB]'
+                : 'text-[#64748B] hover:text-[#1E293B]'
+            }`}
+          >
+            <Home className="w-5 h-5" />
+            <span className="text-[9px] font-black uppercase tracking-wider">Início</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('debts')}
+            className={`flex flex-col items-center gap-1 py-1 text-center flex-1 transition-all cursor-pointer ${
+              activeTab === 'debts' ? 'text-[#2563EB]' : 'text-[#64748B] hover:text-[#1E293B]'
+            }`}
+          >
+            <Receipt className="w-5 h-5" />
+            <span className="text-[9px] font-black uppercase tracking-wider">Minhas Contas</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('work-summary')}
+            className={`flex flex-col items-center gap-1 py-1 text-center flex-1 transition-all cursor-pointer ${
+              activeTab === 'work-summary' ? 'text-[#2563EB]' : 'text-[#64748B] hover:text-[#1E293B]'
+            }`}
+          >
+            <Hammer className="w-5 h-5" />
+            <span className="text-[9px] font-black uppercase tracking-wider">Minha Obra</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Quick Add Modal */}
+      <AnimatePresence>
+        {showQuickAdd && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+            {/* Backdrop Blur overlay */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowQuickAdd(false)}
+              className="absolute inset-0 bg-[#0F172A]/40 backdrop-blur-xs"
+            />
+            {/* Modal Box */}
+            <motion.div
+              initial={{ y: 100, opacity: 0, scale: 0.95 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 100, opacity: 0, scale: 0.95 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+              className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-[#E2E8F0] overflow-hidden z-10 flex flex-col max-h-[90vh]"
+            >
+              <div className="p-5 border-b border-[#F1F5F9] flex justify-between items-center bg-[#F8FAFC]">
+                <h3 className="font-black text-lg text-[#1E293B]">Lançamento Rápido</h3>
+                <button 
+                  onClick={() => setShowQuickAdd(false)}
+                  className="p-1.5 rounded-full hover:bg-[#E2E8F0] text-[#64748B] transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Mode Selector inside Modal (Transaction vs Debt) */}
+              <div className="flex bg-[#F1F5F9] p-1 mx-5 mt-4 rounded-xl border border-[#E2E8F0] shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setQuickAddTab('transaction')}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${quickAddTab === 'transaction' ? 'bg-white text-[#2563EB] shadow-xs font-black' : 'text-[#64748B]'}`}
+                >
+                  Gasto (Cartão/Outros)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQuickAddTab('debt')}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${quickAddTab === 'debt' ? 'bg-white text-[#2563EB] shadow-xs font-black' : 'text-[#64748B]'}`}
+                >
+                  Dívida (Parcelada/Contas)
+                </button>
+              </div>
+
+              <div className="p-5 overflow-y-auto">
+                {quickAddTab === 'transaction' ? (
+                  <form onSubmit={(e) => {
+                    e.preventDefault();
+                    const fd = new FormData(e.currentTarget);
+                    const method = fd.get('method') as string;
+                    const [type, id] = method.split(':');
+                    
+                    addTransaction({
+                      description: fd.get('description') as string,
+                      amount: Number(fd.get('amount')),
+                      type: 'expense',
+                      category: fd.get('category') as string,
+                      date: fd.get('date') as string,
+                      isWorkExpense: fd.get('isWorkExpense') === 'on'
+                    }, type === 'cc' ? id : undefined);
+                    setShowQuickAdd(false);
+                  }} className="space-y-4 text-sm">
+                    <div>
+                      <label className="text-[10px] font-black text-[#94A3B8] uppercase block mb-1">Descrição</label>
+                      <input name="description" required placeholder="Jantar, Supermercado..." className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]" />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black text-[#94A3B8] uppercase block mb-1">Valor (R$)</label>
+                        <input name="amount" type="number" step="0.01" inputMode="decimal" required placeholder="0,00" className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-[#94A3B8] uppercase block mb-1">Categoria</label>
+                        <input name="category" required placeholder="Lazer, Mercado..." className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]" />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black text-[#94A3B8] uppercase block mb-1">Data</label>
+                        <input name="date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-[#94A3B8] uppercase block mb-1">Forma de Pagamento</label>
+                        <select name="method" required className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]">
+                          <optgroup label="Usar Limite do Cartão">
+                            {cards.map(card => (
+                              <option key={card.id} value={`cc:${card.id}`}>{card.name} (Disp: {formatCurrency(card.availableLimit)})</option>
+                            ))}
+                          </optgroup>
+                          <option value="other:direct">Dinheiro / Pix Direto</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2">
+                      <input type="checkbox" name="isWorkExpense" id="modalIsWorkExpense" className="w-4 h-4 rounded-md accent-[#2563EB]" />
+                      <label htmlFor="modalIsWorkExpense" className="text-xs font-bold text-[#1E293B] select-none cursor-pointer">Este é um gasto da Obra (Construção)</label>
+                    </div>
+
+                    <div className="pt-4">
+                      <button type="submit" className="w-full bg-[#2563EB] text-white py-3 rounded-xl font-bold hover:bg-[#1D4ED8] transition-colors uppercase text-xs tracking-wider cursor-pointer">Confirmar Gasto</button>
+                    </div>
+                  </form>
+                ) : (
+                  <form onSubmit={(e) => {
+                    e.preventDefault();
+                    const fd = new FormData(e.currentTarget);
+                    const type = fd.get('type') as 'fixed' | 'unique' | 'installments';
+                    const installments = Number(fd.get('installments') || 1);
+                    
+                    addDebt({
+                      creditor: fd.get('creditor') as string,
+                      totalAmount: Number(fd.get('amount')),
+                      dueDate: fd.get('dueDate') as string,
+                      type,
+                      isWorkExpense: fd.get('isWorkExpense') === 'on'
+                    }, installments);
+                    setShowQuickAdd(false);
+                  }} className="space-y-4 text-sm">
+                    <div>
+                      <label className="text-[10px] font-black text-[#94A3B8] uppercase block mb-1">Credor / Descrição</label>
+                      <input name="creditor" required placeholder="Aluguel, Internet, Compra Loja..." className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]" />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black text-[#94A3B8] uppercase block mb-1">Valor Total (R$)</label>
+                        <input name="amount" type="number" step="0.01" inputMode="decimal" required placeholder="0,00" className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-[#94A3B8] uppercase block mb-1">Tipo de Lançamento</label>
+                        <select name="type" required defaultValue="unique" className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]">
+                          <option value="unique">Única (Pagamento à vista)</option>
+                          <option value="fixed">Fixa (Mensal Recorrente)</option>
+                          <option value="installments">Parcelada</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-black text-[#94A3B8] uppercase block mb-1">Data Vencimento</label>
+                        <input name="dueDate" type="date" required defaultValue={new Date().toISOString().split('T')[0]} className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-[#94A3B8] uppercase block mb-1">Qtd Parcelas (Se Parcelado)</label>
+                        <input name="installments" type="number" min="1" defaultValue="1" className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]" />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2">
+                      <input type="checkbox" name="isWorkExpense" id="modalDebtIsWorkExpense" className="w-4 h-4 rounded-md accent-[#2563EB]" />
+                      <label htmlFor="modalDebtIsWorkExpense" className="text-xs font-bold text-[#1E293B] select-none cursor-pointer">Este é um gasto da Obra (Construção)</label>
+                    </div>
+
+                    <div className="pt-4">
+                      <button type="submit" className="w-full bg-[#2563EB] text-white py-3 rounded-xl font-bold hover:bg-[#1D4ED8] transition-colors uppercase text-xs tracking-wider cursor-pointer">Salvar Lançamento</button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
