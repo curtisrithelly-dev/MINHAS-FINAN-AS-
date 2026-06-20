@@ -38,6 +38,7 @@ export default function App() {
   const [debtSubTab, setDebtSubTab] = useState<'current' | 'old'>('current');
   const [reportStartDate, setReportStartDate] = useState<string>('');
   const [reportEndDate, setReportEndDate] = useState<string>('');
+  const [debtStatusFilter, setDebtStatusFilter] = useState<'all' | 'pending' | 'paid' | 'negotiate'>('all');
 
   // Sync to localStorage
   useEffect(() => {
@@ -465,44 +466,69 @@ export default function App() {
     let filteredDebts = [];
     let periodTitle = "";
     
-    if (reportStartDate || reportEndDate) {
+    // Check if the status filter is 'negotiate' OR subtab is 'old'
+    if (debtStatusFilter === 'negotiate' || debtSubTab === 'old') {
+      // Dívidas Antigas Isoladas: ignore dates, list only A Negociar category
       filteredDebts = debts.filter(d => {
         if (d.status === 'on_hold') return false;
-        if (d.category === 'A Negociar') return false;
-        if (!d.dueDate) return false;
-        if (reportStartDate && d.dueDate < reportStartDate) return false;
-        if (reportEndDate && d.dueDate > reportEndDate) return false;
-        return true;
+        return d.category === 'A Negociar';
       });
-      
-      const startFormatted = reportStartDate ? formatDate(reportStartDate) : 'Início';
-      const endFormatted = reportEndDate ? formatDate(reportEndDate) : 'Fim';
-      periodTitle = `${startFormatted} até ${endFormatted}`;
+      periodTitle = "Dívidas Antigas ('A Negociar') - Sem limite de data";
     } else {
-      // Fallback to active month selection
-      filteredDebts = debts.filter(d => {
-        if (d.status === 'on_hold') return false;
-        if (d.category === 'A Negociar') return false;
-        if (!d.dueDate) return false;
-        const [y, m] = d.dueDate.split('-').map(Number);
+      // Normal period flow (current debts)
+      if (reportStartDate || reportEndDate) {
+        filteredDebts = debts.filter(d => {
+          if (d.status === 'on_hold') return false;
+          if (d.category === 'A Negociar') return false;
+          if (!d.dueDate) return false;
+          if (reportStartDate && d.dueDate < reportStartDate) return false;
+          if (reportEndDate && d.dueDate > reportEndDate) return false;
+          return true;
+        });
+        
+        const startFormatted = reportStartDate ? formatDate(reportStartDate) : 'Início';
+        const endFormatted = reportEndDate ? formatDate(reportEndDate) : 'Fim';
+        periodTitle = `${startFormatted} até ${endFormatted}`;
+      } else {
+        // Fallback to active month selection
+        filteredDebts = debts.filter(d => {
+          if (d.status === 'on_hold') return false;
+          if (d.category === 'A Negociar') return false;
+          if (!d.dueDate) return false;
+          const [y, m] = d.dueDate.split('-').map(Number);
+          const [selY, selM] = selectedMonth.split('-').map(Number);
+          return y === selY && m === selM;
+        });
+        
         const [selY, selM] = selectedMonth.split('-').map(Number);
-        return y === selY && m === selM;
-      });
-      
-      const [selY, selM] = selectedMonth.split('-').map(Number);
-      const months = [
-        'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-      ];
-      periodTitle = `${months[selM - 1]} de ${selY}`;
+        const months = [
+          'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+          'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+        ];
+        periodTitle = `${months[selM - 1]} de ${selY}`;
+      }
+
+      // Filter based on the selected status button (respect the active selection)
+      if (debtStatusFilter === 'pending') {
+        filteredDebts = filteredDebts.filter(d => d.status === 'pending');
+      } else if (debtStatusFilter === 'paid') {
+        filteredDebts = filteredDebts.filter(d => d.status === 'paid');
+      }
     }
 
     if (filteredDebts.length === 0) {
-      alert("Nenhuma conta encontrada para o período selecionado!");
+      alert("Nenhuma conta encontrada para o filtro/período selecionado!");
       return;
     }
 
-    let reportText = `*RELATÓRIO DE CONTAS - PERÍODO: ${periodTitle.toUpperCase()}*\n\n`;
+    let filterLabel = "TUDO";
+    if (debtStatusFilter === 'pending') filterLabel = "🔴 A PAGAR (PENDENTES/VENCIDOS)";
+    if (debtStatusFilter === 'paid') filterLabel = "🟢 PAGO";
+    if (debtStatusFilter === 'negotiate' || debtSubTab === 'old') filterLabel = "📁 A NEGOCIAR";
+
+    let reportText = `*RELATÓRIO DE CONTAS - PERÍODO: ${periodTitle.toUpperCase()}*\n`;
+    reportText += `Filtro selecionado: *${filterLabel}*\n\n`;
+    
     let totalPaid = 0;
     let totalPending = 0;
 
@@ -536,10 +562,16 @@ export default function App() {
     const totalSum = totalPaid + totalPending;
 
     reportText += `--------------------------\n`;
-    reportText += `📊 *RESUMO DO PERÍODO:*\n`;
-    reportText += `🟢 Total Pago: ${formatCurrency(totalPaid)}\n`;
-    reportText += `🔴 Total Vencido/Pendente: ${formatCurrency(totalPending)}\n`;
-    reportText += `📈 *SOMA TOTAL: ${formatCurrency(totalSum)}*\n`;
+    reportText += `📊 *RESUMO DO FILTRO QUE VOCÊ SELECIONOU:*\n`;
+    if (debtStatusFilter === 'all' || debtStatusFilter === 'negotiate' || debtSubTab === 'old') {
+      reportText += `🟢 Total Pago: ${formatCurrency(totalPaid)}\n`;
+      reportText += `🔴 Total Vencido/Pendente: ${formatCurrency(totalPending)}\n`;
+      reportText += `📈 *SOMA TOTAL: ${formatCurrency(totalSum)}*\n`;
+    } else if (debtStatusFilter === 'pending') {
+      reportText += `🔴 Total Vencido/Pendente: ${formatCurrency(totalPending)}\n`;
+    } else if (debtStatusFilter === 'paid') {
+      reportText += `🟢 Total Pago: ${formatCurrency(totalPaid)}\n`;
+    }
 
     if (navigator.share) {
       navigator.share({
@@ -1342,13 +1374,21 @@ export default function App() {
               {/* Sub-tabs segment control for debts */}
               <div className="flex gap-1 bg-slate-100 p-1 rounded-2xl mb-4 shadow-inner border border-slate-200">
                 <button
-                  onClick={() => setDebtSubTab('current')}
+                  onClick={() => {
+                    setDebtSubTab('current');
+                    if (debtStatusFilter === 'negotiate') {
+                      setDebtStatusFilter('all');
+                    }
+                  }}
                   className={`flex-1 py-3 px-4 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex items-center justify-center gap-2 cursor-pointer ${debtSubTab === 'current' ? 'bg-white text-[#2563EB] shadow-xs font-black' : 'text-[#64748B] hover:text-[#1E293B]'}`}
                 >
                   Contas do Mês
                 </button>
                 <button
-                  onClick={() => setDebtSubTab('old')}
+                  onClick={() => {
+                    setDebtSubTab('old');
+                    setDebtStatusFilter('negotiate');
+                  }}
                   className={`flex-1 py-3 px-4 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex items-center justify-center gap-2 cursor-pointer ${debtSubTab === 'old' ? 'bg-white text-[#2563EB] shadow-xs font-black' : 'text-[#64748B] hover:text-[#1E293B]'}`}
                 >
                   Dívidas Antigas ('A Negociar')
@@ -1360,81 +1400,161 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Date Filters & Reporting Panel */}
-              {debtSubTab === 'current' && (
-                <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-xs space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                      📅 Filtro e Relatório de Vencimento
-                    </h3>
-                    {(reportStartDate || reportEndDate) && (
-                      <button 
-                        onClick={() => {
-                          setReportStartDate('');
-                          setReportEndDate('');
-                        }}
-                        className="text-[10px] font-black text-[#E11D48] bg-[#FFF1F2] border border-[#FEE2E2] px-2.5 py-1 rounded-lg hover:bg-[#FECDD3] transition-colors uppercase cursor-pointer"
-                      >
-                        Limpar Filtro
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-                    {/* Start Date */}
-                    <div className="sm:col-span-4 space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase block pl-0.5">De:</label>
-                      <input 
-                        type="date" 
-                        value={reportStartDate} 
-                        onChange={(e) => setReportStartDate(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 text-slate-700 p-2.5 rounded-xl text-xs font-medium outline-none focus:ring-1 focus:ring-[#2563EB]"
-                      />
-                    </div>
-
-                    {/* End Date */}
-                    <div className="sm:col-span-4 space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase block pl-0.5">Até:</label>
-                      <input 
-                        type="date" 
-                        value={reportEndDate} 
-                        onChange={(e) => setReportEndDate(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 text-slate-700 p-2.5 rounded-xl text-xs font-medium outline-none focus:ring-1 focus:ring-[#2563EB]"
-                      />
-                    </div>
-
-                    {/* Share Button updated */}
-                    <div className="sm:col-span-4">
-                      <button
-                        onClick={generatePeriodReport}
-                        className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white p-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-bold uppercase shadow-sm transition-all transform active:scale-95 cursor-pointer"
-                        title="Gerar Relatório para Compartilhar"
-                      >
-                        <Share2 className="w-4 h-4" /> Relatório p/ Compartilhar
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Tiny Active Status Indicator */}
-                  {(reportStartDate || reportEndDate) && (
-                    <div className="bg-blue-50/70 border border-blue-100 text-[11px] text-blue-800 font-bold px-3 py-1.5 rounded-xl flex items-center justify-between">
-                      <span>
-                        Filtro por período ativo: mostrando contas de <strong className="font-extrabold">{reportStartDate ? formatDate(reportStartDate) : 'Mínimo'}</strong> até <strong className="font-extrabold">{reportEndDate ? formatDate(reportEndDate) : 'Máximo'}</strong>.
-                      </span>
-                      <span className="text-xs font-black text-blue-900 bg-white/80 px-2 py-0.5 rounded-md">
-                        {debts.filter(d => {
-                          if (d.status === 'on_hold') return false;
-                          if (d.category === 'A Negociar') return false;
-                          if (!d.dueDate) return false;
-                          if (reportStartDate && d.dueDate < reportStartDate) return false;
-                          if (reportEndDate && d.dueDate > reportEndDate) return false;
-                          return true;
-                        }).length} contas
-                      </span>
-                    </div>
+              {/* Date & Status Filters & Reporting Panel */}
+              <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    📅 Filtros e Compartilhamento de Contas
+                  </h3>
+                  {(reportStartDate || reportEndDate || debtStatusFilter !== 'all') && (
+                    <button 
+                      onClick={() => {
+                        setReportStartDate('');
+                        setReportEndDate('');
+                        setDebtStatusFilter('all');
+                        setDebtSubTab('current');
+                      }}
+                      className="text-[10px] font-black text-[#E11D48] bg-[#FFF1F2] border border-[#FEE2E2] px-2.5 py-1 rounded-lg hover:bg-[#FECDD3] transition-colors uppercase cursor-pointer"
+                    >
+                      Limpar Filtros
+                    </button>
                   )}
                 </div>
-              )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                  {/* Start Date */}
+                  <div className={`sm:col-span-4 space-y-1 transition-all ${(debtStatusFilter === 'negotiate' || debtSubTab === 'old') ? 'opacity-40 pointer-events-none' : ''}`}>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block pl-0.5">De:</label>
+                    <input 
+                      type="date" 
+                      value={reportStartDate} 
+                      onChange={(e) => setReportStartDate(e.target.value)}
+                      disabled={debtStatusFilter === 'negotiate' || debtSubTab === 'old'}
+                      className="w-full bg-slate-50 border border-slate-200 text-slate-700 p-2.5 rounded-xl text-xs font-medium outline-none focus:ring-1 focus:ring-[#2563EB]"
+                    />
+                  </div>
+
+                  {/* End Date */}
+                  <div className={`sm:col-span-4 space-y-1 transition-all ${(debtStatusFilter === 'negotiate' || debtSubTab === 'old') ? 'opacity-40 pointer-events-none' : ''}`}>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block pl-0.5">Até:</label>
+                    <input 
+                      type="date" 
+                      value={reportEndDate} 
+                      onChange={(e) => setReportEndDate(e.target.value)}
+                      disabled={debtStatusFilter === 'negotiate' || debtSubTab === 'old'}
+                      className="w-full bg-slate-50 border border-slate-200 text-slate-700 p-2.5 rounded-xl text-xs font-medium outline-none focus:ring-1 focus:ring-[#2563EB]"
+                    />
+                  </div>
+
+                  {/* Share Button updated */}
+                  <div className="sm:col-span-4">
+                    <button
+                      onClick={generatePeriodReport}
+                      className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white p-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-bold uppercase shadow-sm transition-all transform active:scale-95 cursor-pointer"
+                      title="Gerar Relatório para Compartilhar"
+                    >
+                      <Share2 className="w-4 h-4" /> Relatório p/ Compartilhar
+                    </button>
+                  </div>
+                </div>
+
+                {/* Status Selection Buttons (Botões de Seleção Rápida) */}
+                <div className="pt-2 border-t border-slate-100">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5 pl-0.5">Visualizar Status no Período:</span>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => {
+                        setDebtStatusFilter('all');
+                        setDebtSubTab('current');
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                        debtStatusFilter === 'all' && debtSubTab === 'current'
+                          ? 'bg-slate-800 text-white shadow-xs scale-102 ring-2 ring-slate-800/10'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      🔘 Tudo
+                    </button>
+                    <button
+                      onClick={() => {
+                        setDebtStatusFilter('pending');
+                        setDebtSubTab('current');
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                        debtStatusFilter === 'pending'
+                          ? 'bg-[#EF4444] text-white shadow-xs scale-102 ring-2 ring-red-500/10'
+                          : 'bg-[#FEE2E2] hover:bg-[#FCA5A5] text-[#B91C1C]'
+                      }`}
+                    >
+                      🔴 A Pagar
+                    </button>
+                    <button
+                      onClick={() => {
+                        setDebtStatusFilter('paid');
+                        setDebtSubTab('current');
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                        debtStatusFilter === 'paid'
+                          ? 'bg-[#10B981] text-white shadow-xs scale-102 ring-2 ring-emerald-500/10'
+                          : 'bg-[#D1FAE5] hover:bg-[#6EE7B7] text-[#065F46]'
+                      }`}
+                    >
+                      🟢 Pago
+                    </button>
+                    <button
+                      onClick={() => {
+                        setDebtStatusFilter('negotiate');
+                        setDebtSubTab('old');
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                        debtStatusFilter === 'negotiate' || debtSubTab === 'old'
+                          ? 'bg-[#E11D48] text-white shadow-xs scale-102 ring-2 ring-rose-500/10'
+                          : 'bg-[#FFE4E6] hover:bg-[#FECDD3] text-[#BE123C]'
+                      }`}
+                    >
+                      📁 A Negociar
+                    </button>
+                  </div>
+                </div>
+
+                {/* Tiny Active Status Indicator */}
+                <div className="bg-blue-50/70 border border-blue-100 text-[11px] text-blue-800 font-bold px-3 py-2 rounded-xl flex items-center justify-between flex-wrap gap-2">
+                  <span>
+                    {debtStatusFilter === 'negotiate' || debtSubTab === 'old' ? (
+                      <span>📂 Vendo apenas <strong className="font-extrabold text-[#BE123C]">Dívidas Antigas ('A Negociar')</strong>. Datas ignoradas.</span>
+                    ) : (
+                      <span>
+                        🔍 Período: <strong className="font-extrabold">{reportStartDate ? formatDate(reportStartDate) : 'Mínimo'}</strong> ao <strong className="font-extrabold">{reportEndDate ? formatDate(reportEndDate) : 'Máximo'}</strong>
+                        {debtStatusFilter === 'pending' && <span className="text-[#B91C1C] font-extrabold"> • Apenas Pendentes/Vencidos</span>}
+                        {debtStatusFilter === 'paid' && <span className="text-[#065F46] font-extrabold"> • Apenas Quitados</span>}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-xs font-black text-blue-900 bg-white/80 px-2 py-0.5 rounded-md shrink-0">
+                    {debts.filter(d => {
+                      if (d.status === 'on_hold') return false;
+                      if (debtStatusFilter === 'negotiate' || debtSubTab === 'old') {
+                        return d.category === 'A Negociar';
+                      }
+                      if (d.category === 'A Negociar') return false;
+                      if (debtStatusFilter === 'pending' && d.status !== 'pending') return false;
+                      if (debtStatusFilter === 'paid' && d.status !== 'paid') return false;
+                      
+                      if (reportStartDate || reportEndDate) {
+                        if (!d.dueDate) return false;
+                        if (reportStartDate && d.dueDate < reportStartDate) return false;
+                        if (reportEndDate && d.dueDate > reportEndDate) return false;
+                        return true;
+                      }
+                      
+                      if (!d.dueDate) return false;
+                      const [y, m] = d.dueDate.split('-').map(Number);
+                      const [selY, selM] = selectedMonth.split('-').map(Number);
+                      return y === selY && m === selM;
+                    }).length} contas
+                  </span>
+                </div>
+              </div>
 
               {/* Old debts top banner summary */}
               {debtSubTab === 'old' && (
@@ -1516,25 +1636,35 @@ export default function App() {
               <div className="grid grid-cols-1 gap-4">
                 {debts.filter(d => {
                   if (d.status === 'on_hold') return false;
-                  if (debtSubTab === 'current') {
-                    if (d.category === 'A Negociar') return false;
-                    
-                    if (reportStartDate || reportEndDate) {
-                      if (!d.dueDate) return false;
-                      if (reportStartDate && d.dueDate < reportStartDate) return false;
-                      if (reportEndDate && d.dueDate > reportEndDate) return false;
-                      return true;
-                    }
-
-                    if (!d.dueDate) return false;
-                    const [y, m] = d.dueDate.split('-').map(Number);
-                    const [selY, selM] = selectedMonth.split('-').map(Number);
-                    return y === selY && m === selM;
-                  } else {
+                  
+                  // If 'A Negociar' (Old debts) is requested or active, only show that category and ignore dates
+                  if (debtSubTab === 'old' || debtStatusFilter === 'negotiate') {
                     return d.category === 'A Negociar';
                   }
+
+                  // Otherwise, normal/current monthly bills:
+                  // 1. Never show 'A Negociar' here
+                  if (d.category === 'A Negociar') return false;
+
+                  // 2. Filter by status if requested: 'pending' (overdue/pending) or 'paid'
+                  if (debtStatusFilter === 'pending' && d.status !== 'pending') return false;
+                  if (debtStatusFilter === 'paid' && d.status !== 'paid') return false;
+
+                  // 3. Filter by selected date range if present
+                  if (reportStartDate || reportEndDate) {
+                    if (!d.dueDate) return false;
+                    if (reportStartDate && d.dueDate < reportStartDate) return false;
+                    if (reportEndDate && d.dueDate > reportEndDate) return false;
+                    return true;
+                  }
+
+                  // Default fallback: current selected month selection
+                  if (!d.dueDate) return false;
+                  const [y, m] = d.dueDate.split('-').map(Number);
+                  const [selY, selM] = selectedMonth.split('-').map(Number);
+                  return y === selY && m === selM;
                 }).sort((a,b) => {
-                  if (debtSubTab === 'old') {
+                  if (debtSubTab === 'old' || debtStatusFilter === 'negotiate') {
                     if (a.status !== b.status) {
                       return a.status === 'paid' ? 1 : -1;
                     }
