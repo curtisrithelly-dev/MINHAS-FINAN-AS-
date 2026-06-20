@@ -36,6 +36,8 @@ export default function App() {
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [quickAddTab, setQuickAddTab] = useState<'transaction' | 'debt'>('transaction');
   const [debtSubTab, setDebtSubTab] = useState<'current' | 'old'>('current');
+  const [reportStartDate, setReportStartDate] = useState<string>('');
+  const [reportEndDate, setReportEndDate] = useState<string>('');
 
   // Sync to localStorage
   useEffect(() => {
@@ -459,38 +461,92 @@ export default function App() {
     return `${day.toString().padStart(2, '0')}/${month.toString().padStart(2, '0')}/${year}`;
   };
 
-  const generateOverdueReport = () => {
-    const today = new Date().toISOString().split('T')[0];
-    const overdueDebts = debts.filter(d => 
-      d.status === 'pending' && 
-      d.category !== 'A Negociar' &&
-      d.dueDate && 
-      d.dueDate < today
-    );
+  const generatePeriodReport = () => {
+    let filteredDebts = [];
+    let periodTitle = "";
+    
+    if (reportStartDate || reportEndDate) {
+      filteredDebts = debts.filter(d => {
+        if (d.status === 'on_hold') return false;
+        if (d.category === 'A Negociar') return false;
+        if (!d.dueDate) return false;
+        if (reportStartDate && d.dueDate < reportStartDate) return false;
+        if (reportEndDate && d.dueDate > reportEndDate) return false;
+        return true;
+      });
+      
+      const startFormatted = reportStartDate ? formatDate(reportStartDate) : 'Início';
+      const endFormatted = reportEndDate ? formatDate(reportEndDate) : 'Fim';
+      periodTitle = `${startFormatted} até ${endFormatted}`;
+    } else {
+      // Fallback to active month selection
+      filteredDebts = debts.filter(d => {
+        if (d.status === 'on_hold') return false;
+        if (d.category === 'A Negociar') return false;
+        if (!d.dueDate) return false;
+        const [y, m] = d.dueDate.split('-').map(Number);
+        const [selY, selM] = selectedMonth.split('-').map(Number);
+        return y === selY && m === selM;
+      });
+      
+      const [selY, selM] = selectedMonth.split('-').map(Number);
+      const months = [
+        'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+      ];
+      periodTitle = `${months[selM - 1]} de ${selY}`;
+    }
 
-    if (overdueDebts.length === 0) {
-      alert("Nenhuma conta vencida encontrada!");
+    if (filteredDebts.length === 0) {
+      alert("Nenhuma conta encontrada para o período selecionado!");
       return;
     }
 
-    let reportText = "*RELATÓRIO DE CONTAS VENCIDAS*\n\n";
-    let totalOverdue = 0;
+    let reportText = `*RELATÓRIO DE CONTAS - PERÍODO: ${periodTitle.toUpperCase()}*\n\n`;
+    let totalPaid = 0;
+    let totalPending = 0;
 
-    overdueDebts.sort((a, b) => a.dueDate.localeCompare(b.dueDate)).forEach(d => {
-      reportText += `📅 [${formatDate(d.dueDate)}] - *${d.creditor}*\n💰 Valor: ${formatCurrency(d.remainingAmount)}\n\n`;
-      totalOverdue += d.remainingAmount;
+    filteredDebts.sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || '')).forEach(d => {
+      const today = new Date().toISOString().split('T')[0];
+      const isOverdue = d.status === 'pending' && d.dueDate && d.dueDate < today;
+      let statusLabel = "";
+      if (d.status === 'paid') {
+        statusLabel = "🟢 Pago";
+      } else if (isOverdue) {
+        statusLabel = "🔴 Vencido";
+      } else {
+        statusLabel = "🟡 Pendente";
+      }
+
+      const billPaid = d.totalAmount - d.remainingAmount;
+      const billPending = d.remainingAmount;
+      totalPaid += billPaid;
+      totalPending += billPending;
+
+      reportText += `📅 [${d.dueDate ? formatDate(d.dueDate) : 'Sem Data'}] - *${d.creditor}*\n`;
+      reportText += `💰 Total original: ${formatCurrency(d.totalAmount)} | Status: ${statusLabel}\n`;
+      if (billPaid > 0 && d.status !== 'paid') {
+        reportText += `   (Pago: ${formatCurrency(billPaid)} | Carência Pagar: ${formatCurrency(billPending)})\n`;
+      } else {
+        reportText += `   (Valor Restante: ${formatCurrency(billPending)})\n`;
+      }
+      reportText += `\n`;
     });
 
+    const totalSum = totalPaid + totalPending;
+
     reportText += `--------------------------\n`;
-    reportText += `🔴 *VALOR TOTAL VENCIDO: ${formatCurrency(totalOverdue)}*`;
+    reportText += `📊 *RESUMO DO PERÍODO:*\n`;
+    reportText += `🟢 Total Pago: ${formatCurrency(totalPaid)}\n`;
+    reportText += `🔴 Total Vencido/Pendente: ${formatCurrency(totalPending)}\n`;
+    reportText += `📈 *SOMA TOTAL: ${formatCurrency(totalSum)}*\n`;
 
     if (navigator.share) {
       navigator.share({
-        title: 'Relatório de Contas Vencidas',
+        title: 'Relatório de Contas',
         text: reportText,
       }).catch(err => {
-        console.error("Erro ao compartilhar:", err);
-        // Fallback if share fails (e.g. user cancels or environment restriction)
+        console.error("Erro ao compartilhar", err);
         navigator.clipboard.writeText(reportText).then(() => {
           alert("Relatório copiado para a área de transferência!");
         });
@@ -1262,10 +1318,10 @@ export default function App() {
                 <h2 className="text-xl font-bold text-[#1E293B]">Controle de Dívidas</h2>
                 <div className="flex flex-wrap gap-2 w-full md:w-auto">
                   <button 
-                    onClick={generateOverdueReport}
+                    onClick={generatePeriodReport}
                     className="flex-1 md:flex-none bg-[#E11D48] text-white px-4 py-2 rounded-lg flex items-center justify-center gap-2 text-xs font-bold uppercase hover:bg-[#BE123C] shadow-sm transform active:scale-95 transition-all"
                   >
-                    <Share2 className="w-4 h-4" /> Relatório Vencidos
+                    <Share2 className="w-4 h-4" /> Gerar Relatório para Compartilhar
                   </button>
                   <button 
                     onClick={cleanupDuplicates}
@@ -1303,6 +1359,82 @@ export default function App() {
                   )}
                 </button>
               </div>
+
+              {/* Date Filters & Reporting Panel */}
+              {debtSubTab === 'current' && (
+                <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                      📅 Filtro e Relatório de Vencimento
+                    </h3>
+                    {(reportStartDate || reportEndDate) && (
+                      <button 
+                        onClick={() => {
+                          setReportStartDate('');
+                          setReportEndDate('');
+                        }}
+                        className="text-[10px] font-black text-[#E11D48] bg-[#FFF1F2] border border-[#FEE2E2] px-2.5 py-1 rounded-lg hover:bg-[#FECDD3] transition-colors uppercase cursor-pointer"
+                      >
+                        Limpar Filtro
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                    {/* Start Date */}
+                    <div className="sm:col-span-4 space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase block pl-0.5">De:</label>
+                      <input 
+                        type="date" 
+                        value={reportStartDate} 
+                        onChange={(e) => setReportStartDate(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 text-slate-700 p-2.5 rounded-xl text-xs font-medium outline-none focus:ring-1 focus:ring-[#2563EB]"
+                      />
+                    </div>
+
+                    {/* End Date */}
+                    <div className="sm:col-span-4 space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase block pl-0.5">Até:</label>
+                      <input 
+                        type="date" 
+                        value={reportEndDate} 
+                        onChange={(e) => setReportEndDate(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 text-slate-700 p-2.5 rounded-xl text-xs font-medium outline-none focus:ring-1 focus:ring-[#2563EB]"
+                      />
+                    </div>
+
+                    {/* Share Button updated */}
+                    <div className="sm:col-span-4">
+                      <button
+                        onClick={generatePeriodReport}
+                        className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white p-2.5 rounded-xl flex items-center justify-center gap-2 text-xs font-bold uppercase shadow-sm transition-all transform active:scale-95 cursor-pointer"
+                        title="Gerar Relatório para Compartilhar"
+                      >
+                        <Share2 className="w-4 h-4" /> Relatório p/ Compartilhar
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Tiny Active Status Indicator */}
+                  {(reportStartDate || reportEndDate) && (
+                    <div className="bg-blue-50/70 border border-blue-100 text-[11px] text-blue-800 font-bold px-3 py-1.5 rounded-xl flex items-center justify-between">
+                      <span>
+                        Filtro por período ativo: mostrando contas de <strong className="font-extrabold">{reportStartDate ? formatDate(reportStartDate) : 'Mínimo'}</strong> até <strong className="font-extrabold">{reportEndDate ? formatDate(reportEndDate) : 'Máximo'}</strong>.
+                      </span>
+                      <span className="text-xs font-black text-blue-900 bg-white/80 px-2 py-0.5 rounded-md">
+                        {debts.filter(d => {
+                          if (d.status === 'on_hold') return false;
+                          if (d.category === 'A Negociar') return false;
+                          if (!d.dueDate) return false;
+                          if (reportStartDate && d.dueDate < reportStartDate) return false;
+                          if (reportEndDate && d.dueDate > reportEndDate) return false;
+                          return true;
+                        }).length} contas
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Old debts top banner summary */}
               {debtSubTab === 'old' && (
@@ -1386,6 +1518,14 @@ export default function App() {
                   if (d.status === 'on_hold') return false;
                   if (debtSubTab === 'current') {
                     if (d.category === 'A Negociar') return false;
+                    
+                    if (reportStartDate || reportEndDate) {
+                      if (!d.dueDate) return false;
+                      if (reportStartDate && d.dueDate < reportStartDate) return false;
+                      if (reportEndDate && d.dueDate > reportEndDate) return false;
+                      return true;
+                    }
+
                     if (!d.dueDate) return false;
                     const [y, m] = d.dueDate.split('-').map(Number);
                     const [selY, selM] = selectedMonth.split('-').map(Number);
