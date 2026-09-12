@@ -508,6 +508,27 @@ export default function App() {
   
   const updateCard = (id: string, updates: Partial<CreditCard>) => setCards(cards.map(c => c.id === id ? { ...c, ...updates } : c));
 
+  const cardColors = ['#16A34A', '#2563EB', '#9333EA', '#DC2626', '#F59E0B', '#0891B2', '#DB2777'];
+  const addCard = () => {
+    const newCard: CreditCard = {
+      id: crypto.randomUUID(),
+      name: 'Novo Cartão',
+      limit: 0,
+      availableLimit: 0,
+      closingDay: 1,
+      dueDay: 10,
+      color: cardColors[cards.length % cardColors.length]
+    };
+    setCards([...cards, newCard]);
+  };
+  const deleteCard = (id: string) => {
+    const card = cards.find(c => c.id === id);
+    if (!card) return;
+    if (window.confirm(`Remover o cartão "${card.name}"? Isso não apaga faturas/dívidas já lançadas para ele.`)) {
+      setCards(cards.filter(c => c.id !== id));
+    }
+  };
+
   const exportBackup = () => {
     const backupData = {
       transactions,
@@ -1187,12 +1208,20 @@ export default function App() {
             >
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-[#1E293B]">Meus Cartões de Crédito</h2>
-                <button
-                  onClick={() => setShowCardManager(!showCardManager)}
-                  className="bg-[#2563EB] text-white px-4 py-2 rounded-lg flex items-center gap-2 text-xs font-bold hover:bg-[#1D4ED8]"
-                >
-                  <CreditCardIcon className="w-4 h-4" /> Configurar Limites
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={addCard}
+                    className="bg-[#16A34A] text-white px-4 py-2 rounded-lg flex items-center gap-2 text-xs font-bold hover:bg-[#15803D]"
+                  >
+                    <PlusCircle className="w-4 h-4" /> Novo Cartão
+                  </button>
+                  <button
+                    onClick={() => setShowCardManager(!showCardManager)}
+                    className="bg-[#2563EB] text-white px-4 py-2 rounded-lg flex items-center gap-2 text-xs font-bold hover:bg-[#1D4ED8]"
+                  >
+                    <CreditCardIcon className="w-4 h-4" /> Configurar Limites
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
@@ -1230,7 +1259,17 @@ export default function App() {
                             />
                           </div>
                         </div>
-                        <CreditCardIcon className="w-6 h-6 text-[#CBD5E1]" />
+                        <div className="flex flex-col items-end gap-2">
+                          <CreditCardIcon className="w-6 h-6 text-[#CBD5E1]" />
+                          <button
+                            type="button"
+                            onClick={() => deleteCard(card.id)}
+                            className="text-[#CBD5E1] hover:text-[#DC2626] transition-colors"
+                            title="Remover cartão"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
 
                         <div className="space-y-4">
