@@ -46,4 +46,5 @@ export interface CreditCard {
   closingDay: number;
   dueDay: number;
   color?: string;
+  fixedInvoiceAmount?: number; // Se definido, a fatura é gerada automaticamente todo mês com esse valor
 }
