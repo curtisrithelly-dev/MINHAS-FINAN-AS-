@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, ChangeEvent } from 'react';
+import { useState, useEffect, useMemo, useRef, ChangeEvent, RefObject } from 'react';
 import { PlusCircle, CreditCard as CreditCardIcon, History, Trash2, Download, Upload, Share2, Home, Receipt, Hammer, Plus, X, ListTodo, Wallet, ChevronRight, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Transaction, Debt, CreditCard, DebtPayment } from './types';
@@ -38,6 +38,107 @@ export default function App() {
   const [debtSubTab, setDebtSubTab] = useState<'current' | 'old'>('current');
   const [reportStartDate, setReportStartDate] = useState<string>('');
   const [reportEndDate, setReportEndDate] = useState<string>('');
+
+  // Refs para o preenchimento automático ao lançar a fatura total do cartão
+  const txDescriptionRef = useRef<HTMLInputElement>(null);
+  const txCategoryRef = useRef<HTMLInputElement>(null);
+  const quickTxDescriptionRef = useRef<HTMLInputElement>(null);
+  const quickTxCategoryRef = useRef<HTMLInputElement>(null);
+
+  const autoFillInvoiceFields = (
+    cardId: string,
+    descRef: RefObject<HTMLInputElement>,
+    catRef: RefObject<HTMLInputElement>
+  ) => {
+    const card = cards.find(c => c.id === cardId);
+    if (card) {
+      const monthLabel = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+      if (descRef.current && !descRef.current.value) {
+        descRef.current.value = `Fatura ${card.name} (${monthLabel})`;
+      }
+      if (catRef.current && !catRef.current.value) {
+        catRef.current.value = 'Cartão de Crédito';
+      }
+    }
+  };
+
+  const handlePaymentMethodChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    const [type, id] = e.target.value.split(':');
+    if (type === 'cc') autoFillInvoiceFields(id, txDescriptionRef, txCategoryRef);
+  };
+
+  const handleQuickPaymentMethodChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    const [type, id] = e.target.value.split(':');
+    if (type === 'cc') autoFillInvoiceFields(id, quickTxDescriptionRef, quickTxCategoryRef);
+  };
+
+  // Gera automaticamente a fatura do ciclo atual pros cartões com valor fixo definido (ex: Mercado Pago, Nubank)
+  useEffect(() => {
+    const today = new Date();
+    const pDay = today.getDate();
+    const pMonth = today.getMonth() + 1;
+    const pYear = today.getFullYear();
+
+    setDebts(prevDebts => {
+      let changed = false;
+      const updated = [...prevDebts];
+
+      cards.forEach(card => {
+        if (!card.fixedInvoiceAmount) return;
+
+        let tYear = pYear;
+        let tMonth = pMonth - 1; // 0-indexado
+        if (pDay > card.closingDay) tMonth++;
+        const targetDate = new Date(tYear, tMonth, card.dueDay);
+        const monthYearLabel = targetDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+        const creditorName = `Fatura: ${card.name} (${monthYearLabel})`;
+
+        const alreadyExists = updated.some(d => d.creditor === creditorName);
+        if (!alreadyExists) {
+          const y = targetDate.getFullYear();
+          const mm = String(targetDate.getMonth() + 1).padStart(2, '0');
+          const dd = String(targetDate.getDate()).padStart(2, '0');
+          updated.push({
+            id: crypto.randomUUID(),
+            cardId: card.id,
+            creditor: creditorName,
+            totalAmount: card.fixedInvoiceAmount,
+            remainingAmount: card.fixedInvoiceAmount,
+            dueDate: `${y}-${mm}-${dd}`,
+            status: 'pending',
+            type: 'fixed',
+            payments: [],
+            notes: 'Fatura fixa gerada automaticamente com base no valor configurado do cartão.'
+          });
+          changed = true;
+        }
+      });
+
+      return changed ? updated : prevDebts;
+    });
+  }, [cards]);
+
+  // Cartões sem valor fixo (variam todo mês) perto do dia de fechamento e sem fatura lançada ainda
+  const closingReminders = useMemo(() => {
+    const today = new Date();
+    const pDay = today.getDate();
+    const pMonth = today.getMonth() + 1;
+    const pYear = today.getFullYear();
+
+    return cards.filter(card => {
+      if (card.fixedInvoiceAmount) return false;
+      const diff = pDay - card.closingDay;
+      if (diff < 0 || diff > 3) return false; // janela de 3 dias após o fechamento
+
+      let tYear = pYear;
+      let tMonth = pMonth - 1;
+      if (pDay > card.closingDay) tMonth++;
+      const targetDate = new Date(tYear, tMonth, card.dueDay);
+      const monthYearLabel = targetDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+      const creditorName = `Fatura: ${card.name} (${monthYearLabel})`;
+      return !debts.some(d => d.creditor === creditorName);
+    });
+  }, [cards, debts]);
   const [debtStatusFilter, setDebtStatusFilter] = useState<'all' | 'pending' | 'paid' | 'negotiate'>('all');
 
   // Sync to localStorage
@@ -780,6 +881,22 @@ export default function App() {
                             />
                           </div>
                         </div>
+                        <div>
+                          <label className="text-[9px] font-bold text-[#94A3B8] uppercase block mb-1">Valor Fixo da Fatura (opcional)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            placeholder="Deixe vazio se o valor varia"
+                            className="w-full bg-white border border-[#E2E8F0] p-2 rounded text-xs outline-none"
+                            value={card.fixedInvoiceAmount ?? ''}
+                            onChange={(e) => {
+                              const newCards = [...cards];
+                              newCards[idx].fixedInvoiceAmount = e.target.value === '' ? undefined : Number(e.target.value);
+                              setCards(newCards);
+                            }}
+                          />
+                          <p className="text-[8px] text-[#94A3B8] mt-1">Se preenchido, a fatura é criada sozinha todo mês com esse valor. Deixe vazio pra cartões como o Sicoob, que variam.</p>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -798,6 +915,20 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               className="space-y-6"
             >
+              {closingReminders.length > 0 && (
+                <div className="bg-[#FEF3C7] border border-[#FCD34D] rounded-xl p-4 flex items-start gap-3">
+                  <Receipt className="w-5 h-5 text-[#B45309] shrink-0 mt-0.5" />
+                  <div className="text-xs text-[#92400E]">
+                    <p className="font-bold uppercase tracking-wide mb-1">Fechamento de fatura</p>
+                    <p>
+                      {closingReminders.length === 1
+                        ? `O cartão ${closingReminders[0].name} acabou de fechar. Lembre de lançar o valor da fatura assim que consultar o app do banco.`
+                        : `Os cartões ${closingReminders.map(c => c.name).join(', ')} acabaram de fechar. Lembre de lançar o valor de cada fatura assim que consultar o app do banco.`}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6">
                 <div className="bg-white p-4 md:p-5 rounded-xl border border-[#E2E8F0] shadow-sm">
                   <p className="text-[9px] md:text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1 md:mb-2 text-center md:text-left">Limite Disponível</p>
@@ -1113,6 +1244,19 @@ export default function App() {
                             </div>
                           </div>
 
+                          <div>
+                            <label className="text-[9px] font-bold text-[#94A3B8] uppercase block mb-1">Valor Fixo da Fatura (opcional)</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder="Deixe vazio se o valor varia"
+                              className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2 rounded-lg text-xs outline-none"
+                              value={card.fixedInvoiceAmount ?? ''}
+                              onChange={(e) => updateCard(card.id, { fixedInvoiceAmount: e.target.value === '' ? undefined : Number(e.target.value) })}
+                            />
+                            <p className="text-[8px] text-[#94A3B8] mt-1">Preenchido = a fatura entra sozinha todo mês com esse valor. Vazio = precisa lançar manualmente (ideal pro Sicoob).</p>
+                          </div>
+
                           <div className="grid grid-cols-2 gap-4 pt-2">
                             <div className="bg-[#F8FAFC] p-3 rounded-lg border border-[#F1F5F9]">
                               <p className="text-[9px] font-bold text-[#94A3B8] uppercase">Fatura Atual</p>
@@ -1181,32 +1325,13 @@ export default function App() {
                       isWorkExpense: fd.get('isWorkExpense') === 'on'
                     }, type === 'cc' ? id : undefined);
                   }} className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                    <div className="md:col-span-2">
-                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Descrição</label>
-                      <input name="description" required placeholder="Salário, Jantar..." className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Valor (R$)</label>
-                      <input name="amount" type="number" step="0.01" inputMode="decimal" required className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Tipo</label>
-                      <div className="flex items-center gap-2 bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg h-full">
-                        <input type="checkbox" name="isWorkExpense" id="isWorkExpense" className="w-4 h-4 accent-[#2563EB]" />
-                        <label htmlFor="isWorkExpense" className="text-xs font-bold text-[#1E293B]">Gasto da Obra</label>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Categoria</label>
-                      <input name="category" required placeholder="Lazer, Contas..." className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Data</label>
-                      <input name="date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]" />
+                    <div className="md:col-span-2 bg-[#EFF6FF] border border-[#BFDBFE] rounded-lg p-2.5 text-[11px] text-[#1E40AF] font-medium">
+                      💡 Dica: para lançar no cartão, prefere colocar cada compra ou só o valor total da fatura do mês? Ao escolher um cartão abaixo, a Descrição e a Categoria já vêm preenchidas com "Fatura" — é só ajustar o valor. Se quiser lançar uma compra específica, edite esses dois campos normalmente.
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Método de Pagamento</label>
-                      <select name="method" required className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]">
+                      <select name="method" required defaultValue="" onChange={handlePaymentMethodChange} className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]">
+                        <option value="" disabled>Selecione...</option>
                         <optgroup label="Usar Cartão (Fatura)">
                           {cards.map(card => (
                             <option key={card.id} value={`cc:${card.id}`}>{card.name} (Disp: {formatCurrency(card.availableLimit)})</option>
@@ -1214,6 +1339,29 @@ export default function App() {
                         </optgroup>
                         <option value="other:direct">Dinheiro / Pix Direto</option>
                       </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Valor (R$)</label>
+                      <input name="amount" type="number" step="0.01" inputMode="decimal" required className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]" />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Descrição</label>
+                      <input ref={txDescriptionRef} name="description" required placeholder="Salário, Jantar, ou escolha um cartão ao lado para preencher como Fatura" className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Categoria</label>
+                      <input ref={txCategoryRef} name="category" required placeholder="Lazer, Contas..." className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Data</label>
+                      <input name="date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg outline-none focus:ring-1 focus:ring-[#2563EB]" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-[#94A3B8] uppercase block mb-1">Tipo</label>
+                      <div className="flex items-center gap-2 bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-lg h-full">
+                        <input type="checkbox" name="isWorkExpense" id="isWorkExpense" className="w-4 h-4 accent-[#2563EB]" />
+                        <label htmlFor="isWorkExpense" className="text-xs font-bold text-[#1E293B]">Gasto da Obra</label>
+                      </div>
                     </div>
                     <div className="md:col-span-2 pt-2 flex gap-3">
                       <button type="submit" className="flex-1 bg-[#2563EB] text-white py-2.5 rounded-lg font-bold hover:bg-[#1D4ED8]">Confirmar</button>
@@ -2257,9 +2405,24 @@ export default function App() {
                     }, type === 'cc' ? id : undefined);
                     setShowQuickAdd(false);
                   }} className="space-y-4 text-sm">
+                    <div className="bg-[#EFF6FF] border border-[#BFDBFE] rounded-xl p-2.5 text-[11px] text-[#1E40AF] font-medium">
+                      💡 Ao escolher um cartão em "Forma de Pagamento", Descrição e Categoria já vêm como "Fatura" — ajuste só o valor se for lançar o total da fatura, ou edite os campos se preferir lançar uma compra específica.
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-[#94A3B8] uppercase block mb-1">Forma de Pagamento</label>
+                      <select name="method" required defaultValue="" onChange={handleQuickPaymentMethodChange} className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]">
+                        <option value="" disabled>Selecione...</option>
+                        <optgroup label="Usar Limite do Cartão">
+                          {cards.map(card => (
+                            <option key={card.id} value={`cc:${card.id}`}>{card.name} (Disp: {formatCurrency(card.availableLimit)})</option>
+                          ))}
+                        </optgroup>
+                        <option value="other:direct">Dinheiro / Pix Direto</option>
+                      </select>
+                    </div>
                     <div>
                       <label className="text-[10px] font-black text-[#94A3B8] uppercase block mb-1">Descrição</label>
-                      <input name="description" required placeholder="Jantar, Supermercado..." className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]" />
+                      <input ref={quickTxDescriptionRef} name="description" required placeholder="Jantar, Supermercado..." className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]" />
                     </div>
                     
                     <div className="grid grid-cols-2 gap-4">
@@ -2269,26 +2432,13 @@ export default function App() {
                       </div>
                       <div>
                         <label className="text-[10px] font-black text-[#94A3B8] uppercase block mb-1">Categoria</label>
-                        <input name="category" required placeholder="Lazer, Mercado..." className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]" />
+                        <input ref={quickTxCategoryRef} name="category" required placeholder="Lazer, Mercado..." className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]" />
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-[10px] font-black text-[#94A3B8] uppercase block mb-1">Data</label>
-                        <input name="date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]" />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-[#94A3B8] uppercase block mb-1">Forma de Pagamento</label>
-                        <select name="method" required className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]">
-                          <optgroup label="Usar Limite do Cartão">
-                            {cards.map(card => (
-                              <option key={card.id} value={`cc:${card.id}`}>{card.name} (Disp: {formatCurrency(card.availableLimit)})</option>
-                            ))}
-                          </optgroup>
-                          <option value="other:direct">Dinheiro / Pix Direto</option>
-                        </select>
-                      </div>
+                    <div>
+                      <label className="text-[10px] font-black text-[#94A3B8] uppercase block mb-1">Data</label>
+                      <input name="date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} className="w-full bg-[#F8FAFC] border border-[#E2E8F0] p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-[#2563EB]" />
                     </div>
 
                     <div className="flex items-center gap-2 pt-2">
