@@ -2186,8 +2186,8 @@ export default function App() {
                             )}
                           </div>
 
-                            <div className="flex flex-col gap-2">
-                              <div className="flex items-center gap-2 bg-[#F8FAFC] p-2 rounded-2xl border border-[#F1F5F9] w-full sm:w-auto">
+                            <div className="flex flex-col gap-2 bg-[#F8FAFC] p-3 rounded-2xl border border-[#F1F5F9] w-full">
+                              <div className="grid grid-cols-2 gap-2">
                                 <div className="flex flex-col">
                                   <label className="text-[8px] font-black text-[#94A3B8] uppercase px-1">Valor</label>
                                   <input
@@ -2196,7 +2196,7 @@ export default function App() {
                                     step="0.01"
                                     inputMode="decimal"
                                     defaultValue={debt.remainingAmount}
-                                    className="flex-1 sm:w-28 bg-white border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-black text-[#2563EB] outline-none"
+                                    className="w-full bg-white border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-black text-[#2563EB] outline-none"
                                   />
                                 </div>
                                 <div className="flex flex-col">
@@ -2205,10 +2205,12 @@ export default function App() {
                                     id={`manage-pay-date-${debt.id}`}
                                     type="date"
                                     defaultValue={new Date().toISOString().split('T')[0]}
-                                    className="flex-1 sm:w-32 bg-white border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-black text-[#1E293B] outline-none"
+                                    className="w-full bg-white border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-black text-[#1E293B] outline-none"
                                   />
                                 </div>
-                                <div className="flex flex-col">
+                              </div>
+                              <div className="flex items-end gap-2">
+                                <div className="flex flex-col flex-1">
                                   <label className="text-[8px] font-black text-[#94A3B8] uppercase px-1">Juros</label>
                                   <div className="flex items-center gap-1">
                                     <input
@@ -2217,7 +2219,7 @@ export default function App() {
                                       step="0.01"
                                       inputMode="decimal"
                                       placeholder="0,00"
-                                      className="flex-1 sm:w-20 bg-white border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-black text-[#E11D48] outline-none"
+                                      className="w-full min-w-0 bg-white border border-[#E2E8F0] px-3 py-2 rounded-xl text-xs font-black text-[#E11D48] outline-none"
                                     />
                                     <button
                                       type="button"
@@ -2229,28 +2231,28 @@ export default function App() {
                                         const suggestion = calcSuggestedInterest(debt.dueDate, dateInput.value, Number(valInput.value));
                                         interestInput.value = String(suggestion);
                                       }}
-                                      className="text-[9px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-2.5 rounded-xl hover:bg-[#DBEAFE]"
+                                      className="shrink-0 text-[9px] font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-2.5 rounded-xl hover:bg-[#DBEAFE]"
                                     >
                                       Sugerir
                                     </button>
                                   </div>
                                 </div>
-                                <button
-                                  onClick={() => {
-                                    const input = document.getElementById(`manage-pay-input-${debt.id}`) as HTMLInputElement;
-                                    const interestInput = document.getElementById(`manage-pay-interest-${debt.id}`) as HTMLInputElement;
-                                    const dateInput = document.getElementById(`manage-pay-date-${debt.id}`) as HTMLInputElement;
-                                    const val = Number(input.value);
-                                    const interest = Number(interestInput.value || 0);
-                                    if (val > 0 || interest > 0) {
-                                      registerPayment(debt.id, val, interest, dateInput.value);
-                                    }
-                                  }}
-                                  className="bg-[#1E293B] text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-black transition-all h-full self-end"
-                                >
-                                  Pagar
-                                </button>
                               </div>
+                              <button
+                                onClick={() => {
+                                  const input = document.getElementById(`manage-pay-input-${debt.id}`) as HTMLInputElement;
+                                  const interestInput = document.getElementById(`manage-pay-interest-${debt.id}`) as HTMLInputElement;
+                                  const dateInput = document.getElementById(`manage-pay-date-${debt.id}`) as HTMLInputElement;
+                                  const val = Number(input.value);
+                                  const interest = Number(interestInput.value || 0);
+                                  if (val > 0 || interest > 0) {
+                                    registerPayment(debt.id, val, interest, dateInput.value);
+                                  }
+                                }}
+                                className="w-full bg-[#1E293B] text-white py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-black transition-all"
+                              >
+                                Pagar
+                              </button>
                             </div>
                         </div>
                       </div>
